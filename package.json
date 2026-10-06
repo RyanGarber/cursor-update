@@ -1,0 +1,23 @@
+{
+	"name": "cursor-update",
+	"version": "1.0.0",
+	"description": "Bun CLI to update Cursor on macOS with version checking and cache cleanup",
+	"type": "module",
+	"bin": {
+		"cursor-update": "./src/index.ts"
+	},
+	"scripts": {
+		"start": "bun run ./src/index.ts",
+		"check": "biome check .",
+		"lint": "biome lint .",
+		"format": "biome format --write .",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"install": "bun build ./src/index.ts --outfile ~/.local/bin/cursor-update --target bun && chmod +x ~/.local/bin/cursor-update"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.14",
+		"@types/bun": "^1.4.2",
+		"typescript": "^7.0.2"
+	}
+}
