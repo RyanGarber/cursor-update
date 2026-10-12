@@ -1,10 +1,10 @@
 {
-	"name": "cursor-update",
+	"name": "@ryangarber/sod-off",
 	"version": "1.0.0",
-	"description": "Bun CLI to update Cursor on macOS with version checking and cache cleanup",
+	"description": "Update Cursor, IDEA, Claude Code, Codex, and more - without leaving sod behind.",
 	"type": "module",
 	"bin": {
-		"cursor-update": "./src/index.ts"
+		"sod-off": "./src/index.ts"
 	},
 	"scripts": {
 		"start": "bun run ./src/index.ts",
@@ -13,7 +13,7 @@
 		"format": "biome format --write .",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
-		"install": "bun build ./src/index.ts --outfile ~/.local/bin/cursor-update --target bun && chmod +x ~/.local/bin/cursor-update"
+		"install": "bun build ./src/index.ts --outfile ~/.local/bin/sod-off --target bun && chmod +x ~/.local/bin/sod-off"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.14",

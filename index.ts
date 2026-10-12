@@ -1,8 +1,4 @@
-export * from "./src/cache.ts";
-export * from "./src/check.ts";
-export * from "./src/dmg.ts";
-export * from "./src/download.ts";
-export * from "./src/index.ts";
-export * from "./src/install.ts";
-export * from "./src/types.ts";
-export * from "./src/ui.ts";
+export { apps, registry } from "./src/apps/index.ts";
+export { runApp } from "./src/core/runner.ts";
+export { context } from "./src/core/system.ts";
+export type * from "./src/core/types.ts";
