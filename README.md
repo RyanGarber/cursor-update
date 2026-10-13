@@ -17,7 +17,7 @@ sod-off all update -y
 sod-off all clean
 ```
 
-Requires macOS, Bun, and an existing installation. Apple Silicon and Intel releases are selected where the vendor offers them. Your package name and executable are `@ryangarber/sod-off` and `sod-off`.
+Apple Silicon and Intel releases are selected where the vendor offers them.
 
 | App subcommand | Application | Release source |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ Preparation can download a large installer before confirmation; it does not chan
 
 `sod-off all [update|clean]` runs the action sequentially on every app with an existing installation (inspection by default). Missing apps are skipped. Failures are reported while remaining apps continue, with a nonzero exit status if any failed. `--app-path` cannot be combined with `all`.
 
-Confirmations default to **No**. Declining, EOF, or a non-interactive terminal leaves installations and caches alone. Pass `--yes` or `-y` to accept every confirmation, including in non-interactive runs. Previews and safety checks still run. There is no `--dry-run` or `--force`. Close the application and its CLI sessions before confirming a mutation. The core checks for running processes and revalidates the plan before changing files. Cache contents may change while the prompt is open (including during app shutdown); the approved folder must retain its identity, and changed sizes are refreshed before deletion. Installed-version contents must remain unchanged.
+Confirmations default to **No**. Declining, EOF, or a non-interactive terminal leaves installations and caches alone. Pass `--yes` or `-y` to accept every confirmation, including in non-interactive runs. Previews and safety checks still run.
 
 ```sh
 sod-off cursor update --app-path "$HOME/Applications/Cursor.app"
@@ -53,7 +53,7 @@ sod-off codex --app-path "$HOME/.local/bin/codex"
 
 Desktop discovery prefers `/Applications`, then `~/Applications`. CLI discovery uses the first executable on `PATH`, falling back to `~/.local/bin`. `--app-path` selects a specific primary bundle or launcher. Cleanup also discovers matching, identity-checked alternate bundles in those application directories, known vendor caches, native CLI version directories, and versions installed by sod-off. It does not scan arbitrary disks, delete sessions/configuration, or purge shared npm/Homebrew caches.
 
-Updates support standalone desktop bundles and native CLIs. Executables located under npm, Homebrew, or JetBrains Toolbox package directories must be updated with that package manager. Select a standalone installation to manage it with sod-off. ChatGPT targets the current desktop release (the successor to the Codex desktop app), including migration from the classic app; the preview shows the new version. No app is installed if its primary installation is missing.
+Updates support standalone desktop bundles and native CLIs. Executables located under npm, Homebrew, or JetBrains Toolbox package directories must be updated with that package manager. Select a standalone installation to manage it with sod-off. Note that in the case of the legacy Codex app, it will be replaced with the modern ChatGPT app. No new apps will be installed; only previously installed apps will be updated.
 
 ## Architecture
 
