@@ -47,6 +47,14 @@ export async function command(args: string[]): Promise<string> {
 		clearTimeout(timeout);
 	}
 }
+/** Some download hosts reject non-browser clients with 403, so identify as desktop Safari. */
+export const BROWSER_HEADERS: Record<string, string> = {
+	"User-Agent":
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15",
+	Accept:
+		"text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,*/*;q=0.8",
+	"Accept-Language": "en-US,en;q=0.9",
+};
 export async function response(
 	url: string,
 	signal?: AbortSignal,
@@ -54,6 +62,7 @@ export async function response(
 	if (new URL(url).protocol !== "https:")
 		throw new Error(`Expected HTTPS: ${url}`);
 	const result = await fetch(url, {
+		headers: BROWSER_HEADERS,
 		signal: AbortSignal.any([
 			AbortSignal.timeout(600_000),
 			...(signal ? [signal] : []),
