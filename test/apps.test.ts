@@ -140,9 +140,26 @@ it("does not mistake a similarly named helper for an old desktop bundle", async 
 	}
 });
 
-it("uses the official Claude desktop download redirect", async () => {
+it("resolves the current Claude desktop release from its update feed", async () => {
 	const { claude } = await import("../src/apps/claude.ts");
-	expect((await claude.update?.(ctx, null))?.url).toBe(
-		"https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",
+	const url =
+		"https://downloads.claude.ai/releases/darwin/universal/2.0.0/Claude-abc.zip";
+	const release = await claude.update?.(
+		{
+			...ctx,
+			json: async <T>() =>
+				({
+					currentRelease: "2.0.0",
+					releases: [
+						{
+							version: "1.0.0",
+							updateTo: { url: "https://example.com/old.zip" },
+						},
+						{ version: "2.0.0", updateTo: { url } },
+					],
+				}) as T,
+		},
+		null,
 	);
+	expect(release).toMatchObject({ url, version: "2.0.0", format: "zip" });
 });
