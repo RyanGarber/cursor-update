@@ -4,9 +4,11 @@ import { claude } from "./claude.ts";
 import { claudeCode } from "./claude-code.ts";
 import { codex } from "./codex.ts";
 import { cursor } from "./cursor.ts";
+import { cursorAgent } from "./cursor-agent.ts";
 import { idea } from "./idea.ts";
 export const apps: readonly AppModule[] = [
 	cursor,
+	cursorAgent,
 	idea,
 	claude,
 	claudeCode,

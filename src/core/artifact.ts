@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { chmod, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import {
 	children,
 	contains,
@@ -58,7 +61,10 @@ export async function prepare(
 		ctx.signal?.throwIfAborted();
 		const res = await downloadResponse(release.url, ctx.signal);
 		if (!res.body) throw new Error("Empty download response");
-		await Bun.write(archive, res);
+		await pipeline(
+			Readable.fromWeb(res.body as WebReadableStream<Uint8Array>),
+			createWriteStream(archive),
+		);
 		const download = await usage([archive]);
 		if (release.sha256) {
 			if (
@@ -114,6 +120,9 @@ export async function prepare(
 		if (!contains(temp, await realpath(source)))
 			throw new Error("Release entry escapes staging directory");
 		if (release.format === "binary") await chmod(source, 0o755);
+		const signed = release.verify ? join(root, release.verify) : source;
+		if (!(await exists(signed)) || !contains(temp, await realpath(signed)))
+			throw new Error(`Release is missing ${release.verify}`);
 		const isBundle = release.entry.endsWith(".app");
 		// Authenticate vendor identity before running a downloaded CLI or reading a bundle for installation.
 		await ctx.command([
@@ -123,7 +132,7 @@ export async function prepare(
 			"--strict",
 			"-R",
 			`=anchor apple generic and certificate leaf[subject.OU] = "${release.teamId}"`,
-			source,
+			signed,
 		]);
 		let version: string;
 		if (isBundle) {

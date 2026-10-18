@@ -25,6 +25,8 @@ export interface Release {
 	sha256?: string;
 	teamId: string;
 	bundleIds?: readonly string[];
+	/** Signed executable to authenticate, relative to the entry's root; defaults to the entry. */
+	verify?: string;
 	/** Install the complete archive, including CLI companion binaries. */
 	wholeArchive?: boolean;
 }

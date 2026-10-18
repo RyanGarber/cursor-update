@@ -1,7 +1,7 @@
-import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { children, contains, exists, readJSON } from "../core/system.ts";
-import type { AppModule, CleanupTarget } from "../core/types.ts";
+import { readJSON } from "../core/system.ts";
+import type { AppModule } from "../core/types.ts";
+import { agentVersions } from "./cursor-agent.ts";
 import {
 	bundle,
 	caches,
@@ -11,44 +11,6 @@ import {
 } from "./shared.ts";
 
 const bundleIds = ["com.todesktop.230313mzl4w4u92"];
-const agentVersion = /^\d{4}\.\d{1,2}\.\d{1,2}-[a-f0-9]+$/i;
-
-/**
- * Cursor agent payloads under `<root>/share/cursor-agent/versions`, except the
- * newest and any a launcher in `<root>/bin` (or on PATH) still resolves into.
- */
-async function agentVersions(
-	root: string,
-	launchers: (string | null)[],
-): Promise<CleanupTarget[]> {
-	const versionsRoot = join(root, "share/cursor-agent/versions");
-	const newest = (await children(versionsRoot))
-		.filter((p) => agentVersion.test(p.slice(versionsRoot.length + 1)))
-		.sort(byVersion)
-		.at(-1);
-	const active = [newest];
-	for (const launcher of [
-		...launchers,
-		join(root, "bin/agent"),
-		join(root, "bin/cursor-agent"),
-	])
-		if (launcher && (await exists(launcher)))
-			active.push(await realpath(launcher).catch(() => undefined));
-	const inactive = await versions(versionsRoot, undefined, agentVersion);
-	return inactive.filter(
-		(item) => !active.some((path) => path && contains(item.path, path)),
-	);
-}
-/** `YYYY.M.D-hash` by date, then by name. */
-function byVersion(a: string, b: string): number {
-	const date = (p: string) =>
-		(p.split("/").at(-1)?.split("-")[0] ?? "")
-			.split(".")
-			.map((n) => n.padStart(4, "0"))
-			.join(".");
-	return date(a).localeCompare(date(b)) || a.localeCompare(b);
-}
-
 export const cursor: AppModule = {
 	name: "cursor",
 	displayName: "Cursor",
@@ -82,19 +44,15 @@ export const cursor: AppModule = {
 				data.commit ? join(root, data.commit) : undefined,
 				/^[a-f0-9]{40}$/i,
 			)),
-			// Agent bundled with Cursor.app.
+			// Agent bundled with Cursor.app; the standalone CLI is `cursor-agent`.
 			...(await agentVersions(
 				join(
 					ctx.home,
 					"Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local",
 				),
 				[],
+				true,
 			)),
-			// Standalone `agent` CLI.
-			...(await agentVersions(join(ctx.home, ".local"), [
-				Bun.which("agent"),
-				Bun.which("cursor-agent"),
-			])),
 			...(await otherBundles(
 				ctx,
 				installed,
