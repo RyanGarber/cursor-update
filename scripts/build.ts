@@ -1,19 +1,16 @@
-#!/usr/bin/env bun
-/** Compiles sod-off for every release build into dist/, named by its manifest key. */
-import { $ } from "bun";
+/** Compiles sod-off for every release build into dist/; needs `bun` on PATH. */
+import { execFileSync } from "node:child_process";
+import { asset, builds } from "./builds.ts";
 
-export const builds = [
-	"darwin-arm64",
-	"darwin-x64",
-	"linux-arm64",
-	"linux-x64",
-	"win32-x64",
-] as const;
-export const asset = (build: string) =>
-	`sod-off-${build}${build.startsWith("win32-") ? ".exe" : ""}`;
-
-if (import.meta.main)
-	for (const build of builds) {
-		const target = `bun-${build.replace("win32", "windows")}`;
-		await $`bun build ./src/index.ts --compile --target=${target} --outfile dist/${asset(build)}`;
-	}
+for (const build of builds)
+	execFileSync(
+		"bun",
+		[
+			"build",
+			"./src/main.ts",
+			"--compile",
+			`--target=bun-${build.replace("win32", "windows")}`,
+			`--outfile=dist/${asset(build)}`,
+		],
+		{ stdio: "inherit" },
+	);

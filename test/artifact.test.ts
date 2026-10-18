@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
 import { prepare } from "../src/core/artifact.ts";
 import { exists } from "../src/core/system.ts";
 import type { AppContext, Release } from "../src/core/types.ts";

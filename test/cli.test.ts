@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { apps, available, registry } from "../src/apps/index.ts";
 import { help, parseArgs } from "../src/index.ts";
 
@@ -22,9 +22,10 @@ describe("CLI routing", () => {
 		])
 			expect(() => parseArgs(args)).toThrow();
 	});
-	it("registers all six apps with both initial commands", () => {
+	it("registers every app with both initial commands", () => {
 		expect([...registry(apps).keys()]).toEqual([
 			"cursor",
+			"cursor-agent",
 			"idea",
 			"claude",
 			"claude-code",
@@ -32,8 +33,8 @@ describe("CLI routing", () => {
 			"codex",
 		]);
 		for (const app of apps) {
-			expect(app.update).toBeFunction();
-			expect(app.clean).toBeFunction();
+			expect(app.update).toBeTypeOf("function");
+			expect(app.clean).toBeTypeOf("function");
 			expect(help(apps, "darwin")).toContain(app.name);
 		}
 	});
@@ -43,6 +44,13 @@ describe("CLI routing", () => {
 			expect(available(apps, platform)).toEqual([]);
 			expect(help([], platform)).toContain("No apps are available");
 		}
+	});
+	it("accepts --clean only with update", () => {
+		expect(parseArgs(["cursor", "update", "--clean"]).clean).toBe(true);
+		expect(parseArgs(["all", "update", "--clean", "-y"]).clean).toBe(true);
+		expect(parseArgs(["cursor", "update"]).clean).toBe(false);
+		expect(() => parseArgs(["cursor", "--clean"])).toThrow("update");
+		expect(() => parseArgs(["cursor", "clean", "--clean"])).toThrow("update");
 	});
 	it("rejects duplicate registrations", () => {
 		const app = apps[0];
@@ -137,4 +145,34 @@ it("runs only installed apps for every action and continues after failures", asy
 		).rejects.toThrow("1 app(s) failed");
 		expect(called).toEqual(["broken", "present"]);
 	}
+});
+
+it("cleans after updating, and not after a failed update", async () => {
+	const { updateAndClean } = await import("../src/core/runner.ts");
+	const app = apps[0];
+	if (!app) throw new Error("Missing fixture app");
+	const usage = (bytes: number) => ({ bytes, allocated: bytes });
+	const ui = { log() {}, confirm: async () => false };
+	const called: string[] = [];
+	const stats = await updateAndClean(
+		app,
+		{} as never,
+		ui,
+		async (_, action) => {
+			called.push(action);
+			return action === "update"
+				? { before: usage(10), after: usage(8) }
+				: { before: usage(8), after: usage(3) };
+		},
+	);
+	expect(called).toEqual(["update", "clean"]);
+	expect(stats).toEqual({ before: usage(10), after: usage(3) });
+	called.length = 0;
+	await expect(
+		updateAndClean(app, {} as never, ui, async (_, action) => {
+			called.push(action);
+			throw new Error("update failed");
+		}),
+	).rejects.toThrow("update failed");
+	expect(called).toEqual(["update"]);
 });

@@ -1,4 +1,5 @@
-import { chmod, realpath, rename, rm, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { response } from "./core/system.ts";
@@ -17,12 +18,12 @@ export interface Manifest {
 
 /**
  * The compiled binary this process runs from, the only build that can replace
- * itself; one run from source runs out of `bun`, which is not ours to replace.
+ * itself; one run from source runs out of `node` or `bun`, which is not ours to
+ * replace.
  */
 export function binary(): string | null {
-	if (!process.versions.bun) return null;
 	const name = basename(process.execPath, ".exe").toLowerCase();
-	if (name === "bun" || name === "bun-debug") return null;
+	if (["node", "bun", "bun-debug", "deno"].includes(name)) return null;
 	return process.execPath;
 }
 
@@ -74,10 +75,10 @@ export async function install(
 		const bytes = new Uint8Array(
 			await (await response(asset.url)).arrayBuffer(),
 		);
-		const digest = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+		const digest = createHash("sha256").update(bytes).digest("hex");
 		if (digest !== asset.sha256.toLowerCase())
 			throw new Error(`SHA-256 mismatch for ${asset.url}`);
-		await Bun.write(download, bytes);
+		await writeFile(download, bytes);
 		await chmod(download, (await stat(path)).mode);
 		if (process.platform === "win32") {
 			// A running executable cannot be replaced on Windows, but it can be

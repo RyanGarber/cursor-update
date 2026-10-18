@@ -6,14 +6,20 @@ on:
 
 jobs:
   check:
-    # sod-off and its tests need macOS (PlistBuddy, codesign, hdiutil).
-    runs-on: macos-latest
+    # Tests that need macOS tools skip themselves elsewhere.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # Installs dependencies and compiles the release binaries.
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -28,7 +34,7 @@ jobs:
         run: bun run typecheck
 
       - name: Run tests
-        run: bun test
+        run: bun run test
 
       - name: Build
         run: bun run build
@@ -56,7 +62,7 @@ jobs:
       - name: Run
         shell: bash
         run: |
-          bun build ./src/index.ts --compile --outfile sod-off
+          bun build ./src/main.ts --compile --outfile sod-off
           ./sod-off --version
           ./sod-off --help | tee help.txt
           grep -q "No apps are available" help.txt

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { createHash } from "node:crypto";
 import {
 	mkdtemp,
 	readFile,
@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { selfUpdate } from "../src/index.ts";
 import {
 	check,
@@ -19,7 +20,7 @@ import {
 } from "../src/update.ts";
 
 const sha256 = (text: string) =>
-	new Bun.CryptoHasher("sha256").update(text).digest("hex");
+	createHash("sha256").update(text).digest("hex");
 const manifest = (body: string, next = "99.0.0"): Manifest => ({
 	version: next,
 	assets: {
@@ -32,8 +33,7 @@ const manifest = (body: string, next = "99.0.0"): Manifest => ({
 
 describe("self-update", () => {
 	afterEach(() => {
-		// biome-ignore lint/suspicious/noExplicitAny: restores spied globals
-		(globalThis.fetch as any).mockRestore?.();
+		vi.restoreAllMocks();
 	});
 
 	it("compares versions by their numbers", () => {
@@ -54,7 +54,7 @@ describe("self-update", () => {
 		const target = join(dir, "sod-off");
 		await writeFile(target, "old", { mode: 0o755 });
 		try {
-			spyOn(globalThis, "fetch").mockImplementation((async (url: string) =>
+			vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) =>
 				Object.defineProperty(new Response("new"), "url", {
 					value: url,
 				})) as unknown as typeof fetch);

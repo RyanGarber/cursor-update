@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { appcast } from "../src/apps/chatgpt.ts";
 import { claudeCode } from "../src/apps/claude-code.ts";
 import { codex } from "../src/apps/codex.ts";
@@ -141,6 +141,27 @@ it("does not mistake a similarly named helper for an old desktop bundle", async 
 	}
 });
 
+it("resolves the Cursor agent release pinned by its installer", async () => {
+	const { cursorAgent } = await import("../src/apps/cursor-agent.ts");
+	const release = await cursorAgent.update?.(
+		{
+			...ctx,
+			text: async () =>
+				'DOWNLOAD_URL="https://downloads.cursor.com/lab/2026.10.16-e3cb207/$OS/$ARCH/agent-cli-package.tar.gz"',
+		},
+		null,
+	);
+	expect(release).toMatchObject({
+		version: "2026.10.16-e3cb207",
+		url: "https://downloads.cursor.com/lab/2026.10.16-e3cb207/darwin/arm64/agent-cli-package.tar.gz",
+		wholeArchive: true,
+		verify: "cursor-agent-worker-sea",
+	});
+	await expect(
+		cursorAgent.update?.({ ...ctx, text: async () => "<html/>" }, null),
+	).rejects.toThrow("No Cursor Agent release");
+});
+
 it("uses the official Claude desktop download redirect", async () => {
 	const { claude } = await import("../src/apps/claude.ts");
 	expect((await claude.update?.(ctx, null))?.url).toBe(
@@ -149,7 +170,7 @@ it("uses the official Claude desktop download redirect", async () => {
 });
 
 describe("version cleanup", async () => {
-	const { mkdtemp, mkdir, rm, realpath, symlink } = await import(
+	const { mkdtemp, mkdir, rm, realpath, symlink, writeFile } = await import(
 		"node:fs/promises"
 	);
 	const { tmpdir } = await import("node:os");
@@ -197,26 +218,15 @@ describe("version cleanup", async () => {
 		}
 	});
 
-	it("removes old Cursor agent versions but keeps the newest and linked ones", async () => {
+	it("removes old agent versions bundled with Cursor.app, keeping the newest", async () => {
 		const { cursor } = await import("../src/apps/cursor.ts");
 		const worker =
 			"Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/share/cursor-agent/versions";
-		const cli = ".local/share/cursor-agent/versions";
 		const home = await fixture([
 			join(worker, "2026.10.14-a26f8ae"),
 			join(worker, "2026.10.18-ac23f9a"),
 			join(worker, "2026.9.30-0123abc"),
-			join(cli, "2026.10.1-1111111"),
-			join(cli, "2026.10.9-2222222"),
-			join(cli, "2026.10.12-3333333"),
-			join(cli, "not-a-version"),
-			".local/bin",
 		]);
-		await symlink(
-			join(home, cli, "2026.10.1-1111111/cursor-agent"),
-			join(home, ".local/bin/agent"),
-		);
-		await Bun.write(join(home, cli, "2026.10.1-1111111/cursor-agent"), "");
 		try {
 			const items = await cursor.clean?.({ ...ctx, home }, null);
 			expect(
@@ -224,9 +234,55 @@ describe("version cleanup", async () => {
 					?.filter((item) => item.path.includes("cursor-agent/versions"))
 					.map((item) => item.path),
 			).toEqual([
-				join(home, worker, "2026.10.14-a26f8ae"),
 				join(home, worker, "2026.9.30-0123abc"),
+				join(home, worker, "2026.10.14-a26f8ae"),
+			]);
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
+	});
+
+	it("removes old agent CLI versions but keeps active, linked and running ones", async () => {
+		const { cursorAgent } = await import("../src/apps/cursor-agent.ts");
+		const cli = ".local/share/cursor-agent/versions";
+		const home = await fixture([
+			join(cli, "2026.10.1-1111111"),
+			join(cli, "2026.10.9-2222222"),
+			join(cli, "2026.10.12-3333333/.running"),
+			join(cli, "2026.10.14-4444444/.running"),
+			join(cli, "2026.10.16-5555555"),
+			join(cli, ".tmp-2026.10.16-5555555-1760000000"),
+			join(cli, "not-a-version"),
+			".local/bin",
+		]);
+		// The legacy launcher still points at an older version.
+		await writeFile(join(home, cli, "2026.10.1-1111111/cursor-agent"), "");
+		await symlink(
+			join(home, cli, "2026.10.1-1111111/cursor-agent"),
+			join(home, ".local/bin/cursor-agent"),
+		);
+		await writeFile(
+			join(home, cli, "2026.10.12-3333333/.running", String(process.pid)),
+			"",
+		);
+		await writeFile(
+			join(home, cli, "2026.10.14-4444444/.running/2147483646"),
+			"",
+		);
+		try {
+			const items = await cursorAgent.clean?.(
+				{ ...ctx, home },
+				{
+					path: join(home, ".local/bin/agent"),
+					payload: join(home, cli, "2026.10.16-5555555/cursor-agent"),
+					kind: "cli",
+					version: "2026.10.16-5555555",
+				},
+			);
+			expect(items?.map((item) => item.path)).toEqual([
 				join(home, cli, "2026.10.9-2222222"),
+				join(home, cli, "2026.10.14-4444444"),
+				join(home, cli, ".tmp-2026.10.16-5555555-1760000000"),
 			]);
 		} finally {
 			await rm(home, { recursive: true, force: true });

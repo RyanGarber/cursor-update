@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	link as hardlink,
 	mkdir,
@@ -11,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { validateEntries } from "../src/core/artifact.ts";
 import { link, replace } from "../src/core/operations.ts";
 import { managedRoot, runApp, type Services } from "../src/core/runner.ts";
@@ -89,6 +89,8 @@ beforeEach(async () => {
 afterEach(async () => {
 	await rm(home, { recursive: true, force: true });
 });
+
+const macOS = process.platform === "darwin";
 
 describe("core accounting and confirmation", () => {
 	it("measures nested paths once, deduplicates hard links and never follows symlinks", async () => {
@@ -201,13 +203,17 @@ describe("core accounting and confirmation", () => {
 		expect(logs.join("\n")).toContain("1.0.0 → 2.0.0");
 		expect(logs.join("\n")).toContain(`Overwrite: ${primary}`);
 	});
-	it("confirmed update verifies the replacement and leaves caches alone", async () => {
-		ui.confirm = async () => true;
-		await runApp(app, "update", ctx, ui, ops);
-		expect(await readFile(join(primary, "version"), "utf8")).toBe("2.0.0");
-		expect(await exists(cache)).toBe(true);
-		expect(disposed).toBe(true);
-	});
+	// Replaces bundles with ditto, which only macOS ships.
+	it.skipIf(!macOS)(
+		"confirmed update verifies the replacement and leaves caches alone",
+		async () => {
+			ui.confirm = async () => true;
+			await runApp(app, "update", ctx, ui, ops);
+			expect(await readFile(join(primary, "version"), "utf8")).toBe("2.0.0");
+			expect(await exists(cache)).toBe(true);
+			expect(disposed).toBe(true);
+		},
+	);
 	it("skips a current release without downloading", async () => {
 		await writeFile(join(primary, "version"), "2.0.0");
 		await runApp(app, "update", ctx, ui, ops);
@@ -271,14 +277,17 @@ describe("core accounting and confirmation", () => {
 	});
 });
 describe("replacement transactions", () => {
-	it("restores the old bundle when post-install verification fails", async () => {
-		await expect(
-			replace(ctx, source, primary, async () => {
-				throw new Error("bad version");
-			}),
-		).rejects.toThrow("bad version");
-		expect(await readFile(join(primary, "version"), "utf8")).toBe("1.0.0");
-	});
+	it.skipIf(!macOS)(
+		"restores the old bundle when post-install verification fails",
+		async () => {
+			await expect(
+				replace(ctx, source, primary, async () => {
+					throw new Error("bad version");
+				}),
+			).rejects.toThrow("bad version");
+			expect(await readFile(join(primary, "version"), "utf8")).toBe("1.0.0");
+		},
+	);
 	it("restores a launcher symlink when verification fails", async () => {
 		const launcher = join(home, "launcher");
 		await symlink(join(primary, "version"), launcher);

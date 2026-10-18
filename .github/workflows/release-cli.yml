@@ -39,6 +39,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || format('v{0}', inputs.version) }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -79,7 +84,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           BASE: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
-        run: bun scripts/manifest.ts "$VERSION" "$BASE" | tee "$RUNNER_TEMP/latest.json"
+        run: node scripts/manifest.ts "$VERSION" "$BASE" | tee "$RUNNER_TEMP/latest.json"
 
       - name: Publish manifest
         uses: ./.github/actions/publish

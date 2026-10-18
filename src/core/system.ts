@@ -1,6 +1,15 @@
-import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import {
+	access,
+	lstat,
+	readdir,
+	readFile,
+	realpath,
+	stat,
+} from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { AppContext, Platform, Usage } from "./types.ts";
 
 export const platforms: readonly Platform[] = ["darwin", "linux", "win32"];
@@ -38,27 +47,43 @@ export async function children(path: string): Promise<string[]> {
 		throw error;
 	}
 }
-export async function command(args: string[]): Promise<string> {
-	const proc = Bun.spawn(args, {
-		stdout: "pipe",
-		stderr: "pipe",
-		stdin: "ignore",
-	});
-	const timeout = setTimeout(() => proc.kill(), 120_000);
-	try {
-		const [stdout, stderr, code] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		if (code !== 0)
-			throw new Error(
-				`${args[0]} failed (${code}): ${stderr.trim() || stdout.trim()}`,
-			);
-		return stdout.trim();
-	} finally {
-		clearTimeout(timeout);
-	}
+export function command(args: string[]): Promise<string> {
+	const [file = "", ...rest] = args;
+	return new Promise((resolve, reject) =>
+		execFile(
+			file,
+			rest,
+			{ timeout: 120_000, maxBuffer: 64 * 1024 * 1024 },
+			(error, stdout, stderr) => {
+				if (error)
+					reject(
+						new Error(
+							`${file} failed (${error.code ?? error.signal}): ${stderr.trim() || stdout.trim() || error.message}`,
+						),
+					);
+				else resolve(stdout.trim());
+			},
+		),
+	);
+}
+/** The first executable named `name` on PATH, like `which`. */
+export async function which(name: string): Promise<string | null> {
+	const extensions =
+		process.platform === "win32"
+			? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";")
+			: [""];
+	for (const dir of (process.env.PATH ?? "").split(delimiter))
+		for (const extension of extensions) {
+			if (!dir) continue;
+			const path = join(dir, name + extension);
+			try {
+				if ((await stat(path)).isFile()) {
+					await access(path, constants.X_OK);
+					return path;
+				}
+			} catch {}
+		}
+	return null;
 }
 export async function response(
 	url: string,
