@@ -356,6 +356,21 @@ async function execute(
 	return { before, after };
 }
 
+/**
+ * `update --clean`: updates, then cleans what the update left behind, such as
+ * the previous version. A failed update skips the clean.
+ */
+export async function updateAndClean(
+	app: AppModule,
+	ctx: AppContext,
+	ui: UI,
+	runner: typeof runApp = runApp,
+): Promise<CommandStats> {
+	const update = await runner(app, "update", ctx, ui);
+	if (!app.clean) return update;
+	const clean = await runner(app, "clean", ctx, ui);
+	return { before: update.before, after: clean.after };
+}
 /** Run installed apps sequentially, retaining failures until every app was attempted. */
 export async function runAll(
 	apps: readonly AppModule[],
