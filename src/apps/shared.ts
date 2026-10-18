@@ -4,27 +4,27 @@ import { children, exists, plist, which } from "../core/system.ts";
 import type { AppContext, CleanupTarget, Installation } from "../core/types.ts";
 
 export async function bundle(
-	ctx: AppContext,
+	context: AppContext,
 	names: string[],
 	expectedIds: readonly string[],
 ): Promise<Installation | null> {
-	const paths = ctx.appPath
-		? [ctx.appPath]
+	const paths = context.appPath
+		? [context.appPath]
 		: names.flatMap((name) => [
 				join("/Applications", name),
-				join(ctx.home, "Applications", name),
+				join(context.home, "Applications", name),
 			]);
 	for (const path of paths)
 		if (await exists(path)) {
 			const payload = await realpath(path);
-			const bundleId = await plist(ctx, payload, "CFBundleIdentifier");
+			const bundleId = await plist(context, payload, "CFBundleIdentifier");
 			if (!expectedIds.includes(bundleId))
 				throw new Error(`Unexpected application at ${path}: ${bundleId}`);
 			return {
 				path,
 				payload,
 				kind: "bundle",
-				version: await plist(ctx, payload, "CFBundleShortVersionString"),
+				version: await plist(context, payload, "CFBundleShortVersionString"),
 				bundleId,
 			};
 		}
@@ -35,17 +35,17 @@ export async function bundle(
  * turn; with `accept`, only one whose payload it accepts.
  */
 export async function cli(
-	ctx: AppContext,
+	context: AppContext,
 	executables: string | string[],
 	accept: (payload: string) => boolean = () => true,
 ): Promise<Installation | null> {
 	const names = typeof executables === "string" ? [executables] : executables;
-	let path = ctx.appPath;
+	let path = context.appPath;
 	for (const name of names) {
 		if (path) break;
 		for (const candidate of [
 			await which(name),
-			join(ctx.home, ".local/bin", name),
+			join(context.home, ".local/bin", name),
 		])
 			if (
 				candidate &&
@@ -59,42 +59,44 @@ export async function cli(
 	if (!path || !(await exists(path))) return null;
 	const executable = basename(path);
 	const payload = await realpath(path);
-	const output = await ctx.command([path, "--version"]);
+	const output = await context.command([path, "--version"]);
 	const version = output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0];
 	if (!version)
 		throw new Error(`Unrecognized ${executable} version: ${output}`);
 	return { path, payload, version, kind: "cli" };
 }
 export async function caches(
-	ctx: AppContext,
+	context: AppContext,
 	relative: string[],
 ): Promise<CleanupTarget[]> {
 	const result: CleanupTarget[] = [];
 	for (const name of relative) {
-		const path = join(ctx.home, name);
+		const path = join(context.home, name);
 		if (await exists(path)) result.push({ path, label: name, kind: "cache" });
 	}
 	return result;
 }
 export async function otherBundles(
-	ctx: AppContext,
+	context: AppContext,
 	installed: Installation | null,
 	match: RegExp,
 	expectedIds: readonly string[],
 ): Promise<CleanupTarget[]> {
 	const result: CleanupTarget[] = [];
-	for (const root of ["/Applications", join(ctx.home, "Applications")]) {
+	for (const root of ["/Applications", join(context.home, "Applications")]) {
 		for (const path of await children(root)) {
 			if (!match.test(basename(path)) || (await lstat(path)).isSymbolicLink())
 				continue;
 			if (installed && (await realpath(path)) === installed.payload) continue;
 			if (!(await exists(join(path, "Contents/Info.plist")))) continue;
-			if (!expectedIds.includes(await plist(ctx, path, "CFBundleIdentifier")))
+			if (
+				!expectedIds.includes(await plist(context, path, "CFBundleIdentifier"))
+			)
 				continue;
 			result.push({
 				path,
 				kind: "version",
-				label: `${basename(path)} ${await plist(ctx, path, "CFBundleShortVersionString")}`,
+				label: `${basename(path)} ${await plist(context, path, "CFBundleShortVersionString")}`,
 			});
 		}
 	}

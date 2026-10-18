@@ -5,16 +5,16 @@ export const claudeCode: AppModule = {
 	name: "claude-code",
 	displayName: "Claude Code",
 	platforms: ["darwin"],
-	inspect: (ctx) => cli(ctx, "claude"),
-	update: async (ctx) => {
+	inspect: (context) => cli(context, "claude"),
+	update: async (context) => {
 		const base = "https://downloads.claude.ai/claude-code-releases";
-		const version = (await ctx.text(`${base}/latest`)).trim();
+		const version = (await context.text(`${base}/latest`)).trim();
 		if (!/^\d+\.\d+\.\d+([-+][\w.-]+)?$/.test(version))
 			throw new Error("Invalid Claude Code release version");
-		const manifest = await ctx.json<{
+		const manifest = await context.json<{
 			platforms: Record<string, { checksum: string }>;
 		}>(`${base}/${version}/manifest.json`);
-		const platform = `darwin-${ctx.arch}`;
+		const platform = `darwin-${context.architecture}`;
 		const sha256 = manifest.platforms[platform]?.checksum;
 		if (!sha256) throw new Error(`No Claude Code checksum for ${platform}`);
 		return {
@@ -26,14 +26,14 @@ export const claudeCode: AppModule = {
 			teamId: "Q6L2SF6YDW",
 		};
 	},
-	clean: async (ctx, installed) => [
-		...(await caches(ctx, [
+	clean: async (context, installed) => [
+		...(await caches(context, [
 			".claude/downloads",
 			".cache/claude",
 			"Library/Caches/claude-cli-nodejs",
 		])),
 		...(await versions(
-			join(ctx.home, ".local/share/claude/versions"),
+			join(context.home, ".local/share/claude/versions"),
 			installed?.payload,
 			/^\d+\.\d+\.\d+([-+][\w.-]+)?$/,
 		)),

@@ -4,11 +4,11 @@ Inspect, update, and clean applications from one interactive Bun CLI.
 
 sod-off runs on macOS, Linux and Windows; each app declares the operating systems it supports, and only those are offered. Every app currently supports macOS only, so on Linux and Windows sod-off reports that no apps are available.
 
-Download the build for your system (`sod-off-darwin-arm64`, `sod-off-darwin-x64`, `sod-off-linux-arm64`, `sod-off-linux-x64` or `sod-off-win32-x64.exe`) from the [latest release](https://github.com/ryangarber/sod-off/releases/latest), save it as `~/.local/bin/sod-off` and `chmod +x` it. Or build it from source:
+Download the build for your system (`sod-off-darwin-arm64`, `sod-off-darwin-x64`, `sod-off-linux-arm64`, `sod-off-linux-x64`, `sod-off-win32-arm64.exe` or `sod-off-win32-x64.exe`) from the [latest release](https://github.com/ryangarber/sod-off/releases/latest), save it as `~/.local/bin/sod-off` and `chmod +x` it. Or build it from source:
 
 ```sh
-bun install --ignore-scripts
-bun run install   # compiles to ~/.local/bin/sod-off
+pnpm install
+pnpm run install:local   # compiles to ~/.local/bin/sod-off (needs bun)
 
 sod-off cursor
 sod-off idea update
@@ -53,7 +53,14 @@ Preparation can download a large installer before confirmation; it does not chan
 
 Confirmations default to **No**. Declining, EOF, or a non-interactive terminal leaves installations and caches alone. Pass `--yes` or `-y` to accept every confirmation, including in non-interactive runs. Previews and safety checks still run.
 
-On start, a compiled `sod-off` checks the latest release's `latest.json`. If a newer version is out, it asks to update; on yes, it downloads the build for your architecture, verifies its SHA-256 and replaces itself, then exits so you can run the command again. Only interactive terminals are asked, `--yes` does not answer it, and a failed check is silent. Runs from source never update themselves.
+`sod-off --help` (or `sod-off <app> --help`) lists the apps available on your system and their commands. `sod-off man` prints a manual page, and `sod-off completion <shell>` prints a completion script for bash, zsh, fish, PowerShell or Nushell:
+
+```sh
+sod-off man > ~/.local/share/man/man1/sod-off.1
+sod-off completion zsh > "${fpath[1]}/_sod-off"
+```
+
+Before running any command, a compiled `sod-off` checks the latest release's `latest.json`. If a newer version is out, it asks to update; on yes, it downloads the build for your architecture, verifies its SHA-256 and replaces itself, then exits so you can run the command again. Only interactive terminals are asked, `--yes` does not answer it, and a failed check is silent. Runs from source never update themselves.
 
 ```sh
 sod-off cursor update --app-path "$HOME/Applications/Cursor.app"
@@ -75,8 +82,8 @@ const example: AppModule = {
   name: 'example',
   displayName: 'Example',
   platforms: ['darwin'],
-  async inspect(ctx) { /* discover location and version */ return null; },
-  async update(ctx, installed) {
+  async inspect(context) { /* discover location and version */ return null; },
+  async update(context, installed) {
     return {
       url: 'https://vendor.example/latest.dmg',
       format: 'dmg',
@@ -85,8 +92,8 @@ const example: AppModule = {
       bundleIds: ['com.vendor.example'],
     };
   },
-  async clean(ctx, installed) {
-    return [{ path: `${ctx.home}/Library/Caches/com.vendor.example`, label: 'Example cache', kind: 'cache' }];
+  async clean(context, installed) {
+    return [{ path: `${context.home}/Library/Caches/com.vendor.example`, label: 'Example cache', kind: 'cache' }];
   },
 };
 ```
@@ -103,12 +110,13 @@ Return existing cleanup paths, and exclude active vendor versions. App modules d
 ## Development
 
 ```sh
-bun run test
-bun run typecheck
-bun run check
+pnpm test
+pnpm typecheck
+pnpm check
+pnpm build [--target all] [--manifest]   # compiles into dist/
 ```
 
-The source uses only Node APIs, so it runs on Node (`bun run start` runs `node ./src/main.ts`; Node 22.18+ runs TypeScript directly) as well as compiled by Bun. Tests use Vitest; those needing macOS tools skip themselves elsewhere. CI (`.github/workflows/check.yml`) runs these and builds every OS's binary on every push, on Ubuntu, and smoke-tests a build on Linux and Windows. After it passes on `main`, `release.yml` runs the release as a dry run: rylease's `conventional` preset reports the next version and notes, and the binaries and `latest.json` are built and kept as workflow artifacts. Dispatching `release` from `main` releases for real: rylease bumps `package.json`, prepends `CHANGELOG.md`, commits, tags `v<version>` and creates the GitHub release; `release-cli.yml` then uploads the binaries, followed by `latest.json`.
+The source uses only Node APIs, so it runs on Node (`pnpm start` runs `node ./src/main.ts`; Node 24+ runs TypeScript directly) as well as compiled by Bun. Tests use Vitest and sit beside the modules they cover (`src/**/*.test.ts`); those needing macOS tools skip themselves elsewhere. CI (`.github/workflows/check.yml`) runs these and builds every OS's binary on every push, on macOS. After it passes on `main`, `release.yml` runs the release as a dry run: rylease's `conventional` preset reports the next version and notes, and the binaries and `latest.json` are built and kept as workflow artifacts. Dispatching `release` from `main` releases for real: rylease bumps `package.json`, prepends `CHANGELOG.md`, commits, tags `v<version>` and creates the GitHub release; `release-cli.yml` then uploads the binaries, followed by `latest.json`.
 
 Tests use temporary fixtures and mocked vendor metadata; they cover routing, cancellation, accounting, active-version protection, revalidation, signature/digest failures, mount cleanup, native launcher switching, and rollback. They do not update the developer's installed applications.
 

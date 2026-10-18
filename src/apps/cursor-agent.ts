@@ -73,22 +73,22 @@ export const cursorAgent: AppModule = {
 	displayName: "Cursor Agent CLI",
 	platforms: ["darwin"],
 	// `agent` is a common name; accept only a launcher into a cursor-agent payload.
-	inspect: (ctx) =>
+	inspect: (context) =>
 		cli(
-			ctx,
+			context,
 			["agent", "cursor-agent"],
 			(payload) => basename(payload) === "cursor-agent",
 		),
-	update: async (ctx: AppContext) => {
+	update: async (context: AppContext) => {
 		// The installer pins the current release; the agent's own updater needs a login.
-		const script = await ctx.text("https://cursor.com/install");
+		const script = await context.text("https://cursor.com/install");
 		const version = script.match(
 			/downloads\.cursor\.com\/lab\/(\d{4}\.\d{1,2}\.\d{1,2}-[a-f0-9]+)\//i,
 		)?.[1];
 		if (!version) throw new Error("No Cursor Agent release in the installer");
 		return {
 			version,
-			url: `https://downloads.cursor.com/lab/${version}/darwin/${ctx.arch}/agent-cli-package.tar.gz`,
+			url: `https://downloads.cursor.com/lab/${version}/darwin/${context.architecture}/agent-cli-package.tar.gz`,
 			format: "tar.gz",
 			entry: "cursor-agent",
 			wholeArchive: true,
@@ -97,10 +97,10 @@ export const cursorAgent: AppModule = {
 			teamId: "DCNK4UB866",
 		};
 	},
-	clean: async (ctx, installed) => [
-		...(await caches(ctx, ["Library/Caches/cursor-compile-cache"])),
+	clean: async (context, installed) => [
+		...(await caches(context, ["Library/Caches/cursor-compile-cache"])),
 		...(await agentVersions(
-			join(ctx.home, ".local"),
+			join(context.home, ".local"),
 			[installed?.payload],
 			false,
 		)),

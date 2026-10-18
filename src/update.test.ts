@@ -1,23 +1,15 @@
 import { createHash } from "node:crypto";
-import {
-	mkdtemp,
-	readFile,
-	realpath,
-	rm,
-	stat,
-	writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { selfUpdate } from "../src/index.ts";
+import { testPaths } from "./tests.ts";
 import {
 	check,
+	cleanup,
 	install,
 	isNewer,
 	type Manifest,
 	version,
-} from "../src/update.ts";
+} from "./update.ts";
 
 const sha256 = (text: string) =>
 	createHash("sha256").update(text).digest("hex");
@@ -31,7 +23,7 @@ const manifest = (body: string, next = "99.0.0"): Manifest => ({
 	},
 });
 
-describe("self-update", () => {
+describe("update", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
@@ -50,10 +42,9 @@ describe("self-update", () => {
 	});
 
 	it("replaces the binary only with a verified download", async () => {
-		const dir = await realpath(await mkdtemp(join(tmpdir(), "sod-update-")));
-		const target = join(dir, "sod-off");
-		await writeFile(target, "old", { mode: 0o755 });
-		try {
+		await testPaths([], async (dir) => {
+			const target = join(dir, "sod-off");
+			await writeFile(target, "old", { mode: 0o755 });
 			vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) =>
 				Object.defineProperty(new Response("new"), "url", {
 					value: url,
@@ -68,18 +59,19 @@ describe("self-update", () => {
 			await install(manifest("new"), target, "darwin-arm64");
 			expect(await readFile(target, "utf8")).toBe("new");
 			expect((await stat(target)).mode & 0o777).toBe(0o755);
-		} finally {
-			await rm(dir, { recursive: true, force: true });
-		}
+		});
 	});
 
-	it("does nothing when running from source or when declined", async () => {
-		let asked = false;
-		const ask = async () => {
-			asked = true;
-			return false;
-		};
-		expect(await selfUpdate(null, async () => manifest("x"), ask)).toBe(false);
-		expect(asked).toBe(false);
+	it("removes what an interrupted update left beside the binary", async () => {
+		await testPaths([], async (dir) => {
+			const target = join(dir, "sod-off");
+			await writeFile(target, "current");
+			await writeFile(`${target}.download`, "partial");
+			await writeFile(`${target}.old`, "previous");
+			await cleanup(target);
+			expect(await readFile(target, "utf8")).toBe("current");
+			await expect(stat(`${target}.download`)).rejects.toThrow();
+			await expect(stat(`${target}.old`)).rejects.toThrow();
+		});
 	});
 });

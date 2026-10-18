@@ -15,26 +15,26 @@ export const cursor: AppModule = {
 	name: "cursor",
 	displayName: "Cursor",
 	platforms: ["darwin"],
-	inspect: (ctx) => bundle(ctx, ["Cursor.app"], bundleIds),
-	update: async (ctx) => ({
-		url: `https://api2.cursor.sh/updates/download/golden/darwin-${ctx.arch}/cursor/latest`,
+	inspect: (context) => bundle(context, ["Cursor.app"], bundleIds),
+	update: async (context) => ({
+		url: `https://api2.cursor.sh/updates/download/golden/darwin-${context.architecture}/cursor/latest`,
 		format: "dmg",
 		entry: "Cursor.app",
 		teamId: "VDXQ22DGB9",
 		bundleIds: ["com.todesktop.230313mzl4w4u92"],
 	}),
-	clean: async (ctx, installed) => {
+	clean: async (context, installed) => {
 		const data = installed
 			? await readJSON<{ commit?: string }>(
 					join(installed.payload, "Contents/Resources/app/product.json"),
 				)
 			: {};
 		const root = join(
-			ctx.home,
+			context.home,
 			"Library/Application Support/Cursor/CachedData",
 		);
 		return [
-			...(await caches(ctx, [
+			...(await caches(context, [
 				...electronCaches("Cursor"),
 				"Library/Caches/cursor-compile-cache",
 				"Library/Caches/com.todesktop.230313mzl4w4u92.ShipIt",
@@ -47,14 +47,14 @@ export const cursor: AppModule = {
 			// Agent bundled with Cursor.app; the standalone CLI is `cursor-agent`.
 			...(await agentVersions(
 				join(
-					ctx.home,
+					context.home,
 					"Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local",
 				),
 				[],
 				true,
 			)),
 			...(await otherBundles(
-				ctx,
+				context,
 				installed,
 				/^Cursor(?:[ -].+)?\.app$/,
 				bundleIds,

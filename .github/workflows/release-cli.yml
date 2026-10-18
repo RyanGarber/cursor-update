@@ -39,16 +39,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || format('v{0}', inputs.version) }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+        uses: pnpm/setup@v3
+        with:
+          cache: true
 
       # A dry run builds a commit whose version rylease never wrote; the
       # binary reports and compares against the version it was built with.
@@ -56,42 +50,33 @@ jobs:
         if: env.DRY_RUN == 'true'
         env:
           VERSION: ${{ inputs.version }}
-        run: |
-          jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp
-          mv package.json.tmp package.json
+        run: pnpm pkg set "version=$VERSION"
 
+      # Every binary and the latest.json every installed sod-off checks
+      # (src/update.ts), each asset pinned to this release's tag and digest.
       - name: Build
-        run: |
-          bun run build
-          codesign --force --sign - dist/sod-off-darwin-*
-          file dist/sod-off-*
-          if [ "$(uname -m)" = "arm64" ]; then dist/sod-off-darwin-arm64 --version; fi
+        run: pnpm build --target all --out "$RUNNER_TEMP/cli-artifacts" --manifest --manifest-url "$MANIFEST_URL"
+        env:
+          MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
 
       - name: Publish binaries
         uses: ./.github/actions/publish
         with:
           version: ${{ env.TAG }}
           notes: ${{ inputs.notes }}
-          files: dist/sod-off-*
+          files: ${{ runner.temp }}/cli-artifacts/sod-off-*
           artifact: cli-binaries
           dry-run: ${{ env.DRY_RUN }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # What every installed sod-off checks on start (src/update.ts). Only
-      # once every binary is up, so no CLI is told of a release it cannot yet
-      # download; each asset is pinned to this release's tag and digest.
-      - name: Write manifest
-        env:
-          VERSION: ${{ inputs.version }}
-          BASE: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
-        run: node scripts/manifest.ts "$VERSION" "$BASE" | tee "$RUNNER_TEMP/latest.json"
-
+      # Only once every binary is up, so no CLI is told of a release it cannot
+      # yet download.
       - name: Publish manifest
         uses: ./.github/actions/publish
         with:
           version: ${{ env.TAG }}
           notes: ${{ inputs.notes }}
-          files: ${{ runner.temp }}/latest.json
+          files: ${{ runner.temp }}/cli-artifacts/latest.json
           artifact: cli-latest.json
           dry-run: ${{ env.DRY_RUN }}
           token: ${{ secrets.GITHUB_TOKEN }}

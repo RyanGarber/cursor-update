@@ -1,17 +1,16 @@
 {
 	"compilerOptions": {
 		// Environment setup & latest features
-		"lib": ["ESNext"],
-		"target": "ESNext",
-		"module": "Preserve",
-		"moduleDetection": "force",
-		"jsx": "react-jsx",
-		"allowJs": true,
-		"types": ["node"],
+		"lib": ["ES2024"],
+		"target": "ES2024",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"types": ["node", "vitest/globals"],
 
 		// Bundler mode
-		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
+		"resolveJsonModule": true,
+		"resolvePackageJsonImports": true,
 		"verbatimModuleSyntax": true,
 		"noEmit": true,
 
@@ -20,11 +19,6 @@
 		"skipLibCheck": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-
-		// Some stricter flags (disabled by default)
-		"noUnusedLocals": false,
-		"noUnusedParameters": false,
-		"noPropertyAccessFromIndexSignature": false
+		"noImplicitOverride": true
 	}
 }

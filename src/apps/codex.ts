@@ -7,8 +7,8 @@ export const codex: AppModule = {
 	name: "codex",
 	displayName: "Codex CLI",
 	platforms: ["darwin"],
-	inspect: async (ctx) => {
-		const installed = await cli(ctx, "codex");
+	inspect: async (context) => {
+		const installed = await cli(context, "codex");
 		if (installed) {
 			const root = dirname(dirname(installed.payload));
 			if (await exists(join(root, "codex-package.json")))
@@ -16,12 +16,12 @@ export const codex: AppModule = {
 		}
 		return installed;
 	},
-	update: async (ctx) => {
-		const release = await ctx.json<{
+	update: async (context) => {
+		const release = await context.json<{
 			tag_name: string;
 			assets: { name: string; browser_download_url: string; digest?: string }[];
 		}>("https://api.github.com/repos/openai/codex/releases/latest");
-		const triple = `${ctx.arch === "arm64" ? "aarch64" : "x86_64"}-apple-darwin`;
+		const triple = `${context.architecture === "arm64" ? "aarch64" : "x86_64"}-apple-darwin`;
 		const asset = release.assets.find(
 			(a) => a.name === `codex-package-${triple}.tar.gz`,
 		);
@@ -36,8 +36,8 @@ export const codex: AppModule = {
 			teamId: "2DC432GLL2",
 		};
 	},
-	clean: async (ctx, installed) => {
-		const nativeRoot = join(ctx.home, ".codex/packages/standalone");
+	clean: async (context, installed) => {
+		const nativeRoot = join(context.home, ".codex/packages/standalone");
 		const current = join(nativeRoot, "current");
 		const pinned = (await exists(current))
 			? await realpath(current)
@@ -49,7 +49,7 @@ export const codex: AppModule = {
 		);
 		// The vendor's current pointer may still be used by another launcher or auto-updater.
 		return [
-			...(await caches(ctx, [".cache/codex"])),
+			...(await caches(context, [".cache/codex"])),
 			...inactive.filter((item) => !pinned || !contains(item.path, pinned)),
 		];
 	},

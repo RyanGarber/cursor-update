@@ -26,21 +26,21 @@ export const chatgpt: AppModule = {
 	name: "chatgpt",
 	displayName: "ChatGPT.app",
 	platforms: ["darwin"],
-	inspect: (ctx) => bundle(ctx, ["ChatGPT.app"], bundleIds),
-	update: async (ctx) => ({
+	inspect: (context) => bundle(context, ["ChatGPT.app"], bundleIds),
+	update: async (context) => ({
 		...appcast(
-			await ctx.text(
+			await context.text(
 				"https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
 			),
-			ctx.arch,
+			context.architecture,
 		),
 		format: "zip",
 		entry: "ChatGPT.app",
 		teamId: "2DC432GLL2",
 		bundleIds: ["com.openai.codex"],
 	}),
-	clean: async (ctx, installed) => [
-		...(await caches(ctx, [
+	clean: async (context, installed) => [
+		...(await caches(context, [
 			...electronCaches("com.openai.codex"),
 			...electronCaches("Codex"),
 			...electronCaches("Codex/Default"),
@@ -50,7 +50,7 @@ export const chatgpt: AppModule = {
 			"Library/Caches/com.openai.chat.ShipIt",
 		])),
 		...(await otherBundles(
-			ctx,
+			context,
 			installed,
 			/^ChatGPT(?:[ -].+)?\.app$/,
 			bundleIds,

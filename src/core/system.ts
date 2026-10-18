@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import type { AppContext, Platform, Usage } from "./types.ts";
+import type { AppContext, Architecture, Platform, Usage } from "./types.ts";
 
 export const platforms: readonly Platform[] = ["darwin", "linux", "win32"];
 export const platformNames: Record<Platform, string> = {
@@ -23,6 +23,14 @@ export function currentPlatform(): Platform {
 	if (!platforms.includes(platform))
 		throw new Error(`Unsupported operating system: ${process.platform}`);
 	return platform;
+}
+
+export const architectures: readonly Architecture[] = ["arm64", "x64"];
+export function currentArchitecture(): Architecture {
+	const architecture = process.arch as Architecture;
+	if (!architectures.includes(architecture))
+		throw new Error(`Unsupported architecture: ${process.arch}`);
+	return architecture;
 }
 
 export async function exists(path: string): Promise<boolean> {
@@ -102,15 +110,12 @@ export async function response(
 		throw new Error("Insecure download redirect");
 	return result;
 }
-export function context(appPath?: string, signal?: AbortSignal): AppContext {
-	const platform = currentPlatform();
-	if (process.arch !== "arm64" && process.arch !== "x64")
-		throw new Error(`Unsupported architecture: ${process.arch}`);
+export function appContext(appPath?: string, signal?: AbortSignal): AppContext {
 	return {
 		signal,
-		platform,
+		platform: currentPlatform(),
+		architecture: currentArchitecture(),
 		home: homedir(),
-		arch: process.arch,
 		appPath,
 		command,
 		text: async (url) => (await response(url, signal)).text(),
@@ -119,11 +124,11 @@ export function context(appPath?: string, signal?: AbortSignal): AppContext {
 	};
 }
 export async function plist(
-	ctx: AppContext,
+	context: AppContext,
 	app: string,
 	key: string,
 ): Promise<string> {
-	return ctx.command([
+	return context.command([
 		"/usr/libexec/PlistBuddy",
 		"-c",
 		`Print :${key}`,

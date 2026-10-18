@@ -11,6 +11,7 @@ export interface Installation {
 }
 /** Operating systems sod-off runs on; each app declares which it supports. */
 export type Platform = "darwin" | "linux" | "win32";
+export type Architecture = "arm64" | "x64";
 export interface CleanupTarget {
 	path: string;
 	label: string;
@@ -33,8 +34,8 @@ export interface Release {
 export interface AppContext {
 	signal?: AbortSignal;
 	platform: Platform;
+	architecture: Architecture;
 	home: string;
-	arch: "arm64" | "x64";
 	appPath?: string;
 	command(args: string[]): Promise<string>;
 	text(url: string): Promise<string>;
@@ -50,15 +51,24 @@ export interface AppModule {
 	displayName: string;
 	/** Operating systems this module supports; it is hidden on any other. */
 	platforms: readonly Platform[];
-	inspect(ctx: AppContext): Promise<Installation | null>;
-	update?(ctx: AppContext, installed: Installation | null): Promise<Release>;
+	inspect(context: AppContext): Promise<Installation | null>;
+	update?(
+		context: AppContext,
+		installed: Installation | null,
+	): Promise<Release>;
 	clean?(
-		ctx: AppContext,
+		context: AppContext,
 		installed: Installation | null,
 	): Promise<CleanupTarget[]>;
 }
 export interface UI {
 	log(message: string): void;
+	warn(message: string): void;
+	success(message: string): void;
+	/** A titled block, such as a preview of what a confirmation would change. */
+	note(title: string, body: string): void;
+	/** Runs one step of work, shown as it runs and as done or failed. */
+	task<T>(title: string, run: () => Promise<T>): Promise<T>;
 	confirm(message: string): Promise<boolean>;
 }
 export interface Usage {

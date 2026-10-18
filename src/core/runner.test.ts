@@ -1,5 +1,4 @@
 import {
-	link as hardlink,
 	mkdir,
 	mkdtemp,
 	readFile,
@@ -10,19 +9,24 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { validateEntries } from "../src/core/artifact.ts";
-import { link, replace } from "../src/core/operations.ts";
-import { managedRoot, runApp, type Services } from "../src/core/runner.ts";
-import { command, exists, safePath, usage } from "../src/core/system.ts";
-import type { AppContext, AppModule, UI } from "../src/core/types.ts";
+import { testContext, testUI } from "../tests.ts";
+import { link, replace } from "./operations.ts";
+import {
+	managedRoot,
+	type Operation,
+	runAll,
+	runApp,
+	updateAndClean,
+} from "./runner.ts";
+import { command, exists, usage } from "./system.ts";
+import type { AppContext, AppModule, Installation, UI } from "./types.ts";
 
 let home: string;
-let ctx: AppContext;
+let context: AppContext;
 let app: AppModule;
 let logs: string[];
 let ui: UI;
-let ops: Services;
+let operations: Operation;
 let disposed: boolean;
 let source: string;
 let primary: string;
@@ -38,10 +42,10 @@ beforeEach(async () => {
 	await writeFile(join(source, "version"), "2.0.0");
 	await mkdir(cache);
 	await writeFile(join(cache, "data"), "1234567890");
-	ctx = {
+	context = {
 		platform: "darwin",
 		home,
-		arch: "arm64",
+		architecture: "arm64",
 		command: async (args) => (args[0] === "/bin/ps" ? "" : command(args)),
 		text: async () => {
 			throw new Error("Unexpected network");
@@ -70,9 +74,9 @@ beforeEach(async () => {
 		}),
 	};
 	logs = [];
-	ui = { log: (message) => logs.push(message), confirm: async () => false };
+	ui = testUI(logs);
 	disposed = false;
-	ops = {
+	operations = {
 		replace,
 		link,
 		prepare: async () => ({
@@ -92,29 +96,22 @@ afterEach(async () => {
 
 const macOS = process.platform === "darwin";
 
-describe("core accounting and confirmation", () => {
-	it("measures nested paths once, deduplicates hard links and never follows symlinks", async () => {
-		await hardlink(join(cache, "data"), join(cache, "copy"));
-		await symlink(cache, join(cache, "loop"));
-		const result = await usage([cache, join(cache, "data")]);
-		expect(result.bytes).toBe(10 + Buffer.byteLength(cache));
-		expect(result.allocated).toBeGreaterThan(0);
-	});
+describe("runApp", () => {
 	it("inspection is read-only and reports before/after stats", async () => {
-		const stats = await runApp(app, "inspect", ctx, ui);
+		const stats = await runApp(app, "inspect", context, ui);
 		expect(stats.before).toEqual(stats.after);
 		expect(logs.join("\n")).toContain(primary);
 		expect(logs.join("\n")).toContain("1.0.0");
 	});
 	it("cancelled cleanup previews every path and changes nothing", async () => {
-		const stats = await runApp(app, "clean", ctx, ui);
+		const stats = await runApp(app, "clean", context, ui);
 		expect(await exists(cache)).toBe(true);
 		expect(stats.before).toEqual(stats.after);
 		expect(logs.join("\n")).toContain("10 B files");
 	});
 	it("confirmed cleanup removes only the plan and accounts for reclaimed space", async () => {
 		ui.confirm = async () => true;
-		const stats = await runApp(app, "clean", ctx, ui);
+		const stats = await runApp(app, "clean", context, ui);
 		expect(await exists(cache)).toBe(false);
 		expect(await exists(primary)).toBe(true);
 		expect(stats.before.bytes - stats.after.bytes).toBe(10);
@@ -122,16 +119,10 @@ describe("core accounting and confirmation", () => {
 	it("refuses targets containing the primary installation", async () => {
 		app.clean = async () => [{ path: home, label: "unsafe", kind: "cache" }];
 		ui.confirm = async () => true;
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow(
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
 			"home directory",
 		);
 		expect(await exists(primary)).toBe(true);
-	});
-	it("refuses cleanup through a symlinked parent", async () => {
-		await symlink(cache, join(home, "alias"));
-		await expect(safePath(join(home, "alias/data"))).rejects.toThrow(
-			"Symlinked parent",
-		);
 	});
 	it("rejects changes to an installed version during confirmation", async () => {
 		app.clean = async () => [
@@ -141,7 +132,7 @@ describe("core accounting and confirmation", () => {
 			await writeFile(join(cache, "new"), "changed");
 			return true;
 		};
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow(
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
 			"changed since preview",
 		);
 		expect(await exists(join(cache, "data"))).toBe(true);
@@ -152,7 +143,7 @@ describe("core accounting and confirmation", () => {
 			await writeFile(join(cache, "new"), "new cache file");
 			return true;
 		};
-		await runApp(app, "clean", ctx, ui);
+		await runApp(app, "clean", context, ui);
 		expect(await exists(cache)).toBe(false);
 		expect(logs.join("\n")).toContain("Cache size refreshed:");
 	});
@@ -164,7 +155,7 @@ describe("core accounting and confirmation", () => {
 			await writeFile(join(cache, "replacement"), "preserve");
 			return true;
 		};
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow(
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
 			"changed since preview",
 		);
 		expect(await exists(join(cache, "replacement"))).toBe(true);
@@ -174,8 +165,10 @@ describe("core accounting and confirmation", () => {
 			await writeFile(join(cache, "new"), "changed");
 			return true;
 		};
-		ctx.command = async () => `${primary}/Contents/MacOS/Example`;
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow("Quit the app");
+		context.command = async () => `${primary}/Contents/MacOS/Example`;
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
+			"Quit the app",
+		);
 		expect(await exists(cache)).toBe(true);
 	});
 	it("protects a newly active version selected during confirmation", async () => {
@@ -189,26 +182,26 @@ describe("core accounting and confirmation", () => {
 			});
 			return true;
 		};
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow(
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
 			"overlaps primary",
 		);
 		app.inspect = inspect;
 		expect(await exists(cache)).toBe(true);
 	});
 	it("declining update disposes preparation without replacing files", async () => {
-		const stats = await runApp(app, "update", ctx, ui, ops);
+		const stats = await runApp(app, "update", context, ui, operations);
 		expect(disposed).toBe(true);
 		expect(stats.before).toEqual(stats.after);
 		expect(await readFile(join(primary, "version"), "utf8")).toBe("1.0.0");
 		expect(logs.join("\n")).toContain("1.0.0 → 2.0.0");
-		expect(logs.join("\n")).toContain(`Overwrite: ${primary}`);
+		expect(logs.join("\n")).toMatch(new RegExp(`Overwrite +${primary}`));
 	});
 	// Replaces bundles with ditto, which only macOS ships.
 	it.skipIf(!macOS)(
 		"confirmed update verifies the replacement and leaves caches alone",
 		async () => {
 			ui.confirm = async () => true;
-			await runApp(app, "update", ctx, ui, ops);
+			await runApp(app, "update", context, ui, operations);
 			expect(await readFile(join(primary, "version"), "utf8")).toBe("2.0.0");
 			expect(await exists(cache)).toBe(true);
 			expect(disposed).toBe(true);
@@ -216,7 +209,7 @@ describe("core accounting and confirmation", () => {
 	);
 	it("skips a current release without downloading", async () => {
 		await writeFile(join(primary, "version"), "2.0.0");
-		await runApp(app, "update", ctx, ui, ops);
+		await runApp(app, "update", context, ui, operations);
 		expect(disposed).toBe(false);
 		expect(logs.join("\n")).toContain("Already current");
 	});
@@ -225,42 +218,42 @@ describe("core accounting and confirmation", () => {
 			await writeFile(join(primary, "version"), "3.0.0");
 			return true;
 		};
-		await expect(runApp(app, "update", ctx, ui, ops)).rejects.toThrow(
-			"changed since preview",
-		);
+		await expect(
+			runApp(app, "update", context, ui, operations),
+		).rejects.toThrow("changed since preview");
 		expect(disposed).toBe(true);
 		expect(await readFile(join(primary, "version"), "utf8")).toBe("3.0.0");
 	});
 	it("refuses mutation while the app is running", async () => {
 		ui.confirm = async () => true;
-		ctx.command = async (args) =>
+		context.command = async (args) =>
 			args[0] === "/bin/ps"
 				? `${primary}/Contents/MacOS/Example`
 				: command(args);
-		await expect(runApp(app, "update", ctx, ui, ops)).rejects.toThrow(
-			"Quit the app",
-		);
+		await expect(
+			runApp(app, "update", context, ui, operations),
+		).rejects.toThrow("Quit the app");
 		expect(await readFile(join(primary, "version"), "utf8")).toBe("1.0.0");
 	});
 	it("reports stats and disposes resources even when replacement fails", async () => {
 		ui.confirm = async () => true;
-		ops.replace = async () => {
+		operations.replace = async () => {
 			throw new Error("copy failed");
 		};
-		await expect(runApp(app, "update", ctx, ui, ops)).rejects.toThrow(
-			"copy failed",
-		);
+		await expect(
+			runApp(app, "update", context, ui, operations),
+		).rejects.toThrow("copy failed");
 		expect(disposed).toBe(true);
 		expect(logs.join("\n")).toContain("Space tracked:");
 	});
 	it("optional subcommands fail explicitly", async () => {
 		delete app.clean;
-		await expect(runApp(app, "clean", ctx, ui)).rejects.toThrow(
+		await expect(runApp(app, "clean", context, ui)).rejects.toThrow(
 			"does not support clean",
 		);
 	});
 	it("discovers managed versions without deleting the active payload", async () => {
-		const root = managedRoot(ctx, app);
+		const root = managedRoot(context, app);
 		await mkdir(root, { recursive: true });
 		await writeFile(join(root, "1.0.0"), "old");
 		await writeFile(join(root, "2.0.0"), "current");
@@ -271,39 +264,9 @@ describe("core accounting and confirmation", () => {
 			kind: "cli",
 		});
 		ui.confirm = async () => true;
-		await runApp(app, "clean", ctx, ui);
+		await runApp(app, "clean", context, ui);
 		expect(await exists(join(root, "1.0.0"))).toBe(false);
 		expect(await exists(join(root, "2.0.0"))).toBe(true);
-	});
-});
-describe("replacement transactions", () => {
-	it.skipIf(!macOS)(
-		"restores the old bundle when post-install verification fails",
-		async () => {
-			await expect(
-				replace(ctx, source, primary, async () => {
-					throw new Error("bad version");
-				}),
-			).rejects.toThrow("bad version");
-			expect(await readFile(join(primary, "version"), "utf8")).toBe("1.0.0");
-		},
-	);
-	it("restores a launcher symlink when verification fails", async () => {
-		const launcher = join(home, "launcher");
-		await symlink(join(primary, "version"), launcher);
-		await expect(
-			link(ctx, join(source, "version"), launcher, async () => {
-				throw new Error("bad version");
-			}),
-		).rejects.toThrow("bad version");
-		expect(await realpath(launcher)).toBe(join(primary, "version"));
-	});
-	it("rejects archive path traversal", () => {
-		expect(() => validateEntries("ok\n../../outside")).toThrow();
-		expect(() => validateEntries("/absolute")).toThrow();
-		expect(() =>
-			validateEntries("package/bin/codex\n./package/lib"),
-		).not.toThrow();
 	});
 });
 
@@ -321,7 +284,7 @@ describe("native CLI updates", () => {
 			kind: "cli",
 			version: await readFile(launcher, "utf8"),
 		});
-		ops.prepare = async () => ({
+		operations.prepare = async () => ({
 			source: fresh,
 			version: "2.0.0",
 			download: await usage([fresh]),
@@ -331,41 +294,118 @@ describe("native CLI updates", () => {
 			},
 		});
 		ui.confirm = async () => true;
-		const stats = await runApp(app, "update", ctx, ui, ops);
-		expect(await realpath(launcher)).toBe(join(managedRoot(ctx, app), "2.0.0"));
+		const stats = await runApp(app, "update", context, ui, operations);
+		expect(await realpath(launcher)).toBe(
+			join(managedRoot(context, app), "2.0.0"),
+		);
 		expect(await readFile(launcher, "utf8")).toBe("2.0.0");
 		expect(await readFile(old, "utf8")).toBe("1.0.0");
 		expect(stats.after.bytes).toBeGreaterThan(stats.before.bytes);
 	});
+
+	it("keeps a promoted native payload if launcher backup cleanup fails", async () => {
+		const old = join(home, "old-cli");
+		const launcher = join(home, "cli");
+		const fresh = join(home, "fresh-cli");
+		await writeFile(old, "1.0.0");
+		await writeFile(fresh, "2.0.0");
+		await symlink(old, launcher);
+		app.inspect = async () => ({
+			path: launcher,
+			payload: await realpath(launcher),
+			kind: "cli",
+			version: await readFile(launcher, "utf8"),
+		});
+		operations.prepare = async () => ({
+			source: fresh,
+			version: "2.0.0",
+			download: await usage([fresh]),
+			unpacked: await usage([fresh]),
+			dispose: async () => {},
+		});
+		operations.link = async (context, payload, target, verify) => {
+			await link(context, payload, target, verify);
+			throw new Error("backup cleanup failed");
+		};
+		ui.confirm = async () => true;
+		await expect(
+			runApp(app, "update", context, ui, operations),
+		).rejects.toThrow("backup cleanup failed");
+		expect(await readFile(launcher, "utf8")).toBe("2.0.0");
+	});
 });
 
-it("keeps a promoted native payload if launcher backup cleanup fails", async () => {
-	const old = join(home, "old-cli");
-	const launcher = join(home, "cli");
-	const fresh = join(home, "fresh-cli");
-	await writeFile(old, "1.0.0");
-	await writeFile(fresh, "2.0.0");
-	await symlink(old, launcher);
-	app.inspect = async () => ({
-		path: launcher,
-		payload: await realpath(launcher),
-		kind: "cli",
-		version: await readFile(launcher, "utf8"),
+describe("runAll", () => {
+	it("runs only installed apps for every action and continues after failures", async () => {
+		const installed: Installation = {
+			path: "/tmp/app",
+			payload: "/tmp/app",
+			kind: "cli",
+			version: "1",
+		};
+		const modules: AppModule[] = [
+			{
+				name: "missing",
+				displayName: "Missing",
+				platforms: ["darwin"],
+				inspect: async () => null,
+			},
+			{
+				name: "broken",
+				displayName: "Broken",
+				platforms: ["darwin"],
+				inspect: async () => installed,
+			},
+			{
+				name: "present",
+				displayName: "Present",
+				platforms: ["darwin"],
+				inspect: async () => installed,
+			},
+		];
+		for (const action of ["inspect", "update", "clean"] as const) {
+			const called: string[] = [];
+			await expect(
+				runAll(
+					modules,
+					action,
+					testContext(),
+					testUI(),
+					async (app, requested) => {
+						called.push(app.name);
+						expect(requested).toBe(action);
+						if (app.name === "broken") throw new Error("fixture failure");
+						return {
+							before: { bytes: 0, allocated: 0 },
+							after: { bytes: 0, allocated: 0 },
+						};
+					},
+				),
+			).rejects.toThrow("1 app(s) failed");
+			expect(called).toEqual(["broken", "present"]);
+		}
 	});
-	ops.prepare = async () => ({
-		source: fresh,
-		version: "2.0.0",
-		download: await usage([fresh]),
-		unpacked: await usage([fresh]),
-		dispose: async () => {},
+});
+
+describe("updateAndClean", () => {
+	it("cleans after updating, and not after a failed update", async () => {
+		const usage = (bytes: number) => ({ bytes, allocated: bytes });
+		const called: string[] = [];
+		const stats = await updateAndClean(app, context, ui, async (_, action) => {
+			called.push(action);
+			return action === "update"
+				? { before: usage(10), after: usage(8) }
+				: { before: usage(8), after: usage(3) };
+		});
+		expect(called).toEqual(["update", "clean"]);
+		expect(stats).toEqual({ before: usage(10), after: usage(3) });
+		called.length = 0;
+		await expect(
+			updateAndClean(app, context, ui, async (_, action) => {
+				called.push(action);
+				throw new Error("update failed");
+			}),
+		).rejects.toThrow("update failed");
+		expect(called).toEqual(["update"]);
 	});
-	ops.link = async (context, payload, target, verify) => {
-		await link(context, payload, target, verify);
-		throw new Error("backup cleanup failed");
-	};
-	ui.confirm = async () => true;
-	await expect(runApp(app, "update", ctx, ui, ops)).rejects.toThrow(
-		"backup cleanup failed",
-	);
-	expect(await readFile(launcher, "utf8")).toBe("2.0.0");
 });

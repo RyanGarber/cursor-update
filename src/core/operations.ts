@@ -5,7 +5,7 @@ import type { OperationContext } from "./types.ts";
 
 /** Same-filesystem staging + rollback. An unrecoverable backup is deliberately retained. */
 export async function replace(
-	ctx: OperationContext,
+	context: OperationContext,
 	source: string,
 	target: string,
 	verify: () => Promise<void>,
@@ -14,13 +14,13 @@ export async function replace(
 	await mkdir(dirname(target), { recursive: true });
 	const stage = `${target}.sod-off-stage-${crypto.randomUUID()}`;
 	const backup = `${target}.sod-off-backup-${crypto.randomUUID()}`;
-	ctx.track?.(backup);
+	context.track?.(backup);
 	let backedUp = false;
-	ctx.track?.(stage);
+	context.track?.(stage);
 	let promoted = false;
 	try {
 		if ((await lstat(source)).isDirectory())
-			await ctx.command(["/usr/bin/ditto", source, stage]);
+			await context.command(["/usr/bin/ditto", source, stage]);
 		else await copyFile(source, stage);
 		if (await exists(target)) {
 			await rename(target, backup);
@@ -55,7 +55,7 @@ export async function replace(
 }
 /** Atomically switches a launcher; retains its old contents until verification passes. */
 export async function link(
-	ctx: OperationContext,
+	context: OperationContext,
 	payload: string,
 	target: string,
 	verify: () => Promise<void>,
@@ -63,11 +63,11 @@ export async function link(
 	await safePath(target);
 	await mkdir(dirname(target), { recursive: true });
 	const source = `${target}.sod-off-link-${crypto.randomUUID()}`;
-	ctx.track?.(source);
+	context.track?.(source);
 	await symlink(payload, source);
 	// copyFile follows symlinks, so use a separate rename transaction for launchers.
 	const backup = `${target}.sod-off-backup-${crypto.randomUUID()}`;
-	ctx.track?.(backup);
+	context.track?.(backup);
 	let backedUp = false;
 	try {
 		if (await exists(target)) {

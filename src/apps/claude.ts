@@ -7,7 +7,7 @@ export const claude: AppModule = {
 	name: "claude",
 	displayName: "Claude.app",
 	platforms: ["darwin"],
-	inspect: (ctx) => bundle(ctx, ["Claude.app"], bundleIds),
+	inspect: (context) => bundle(context, ["Claude.app"], bundleIds),
 	update: async () => ({
 		url: "https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",
 		format: "dmg",
@@ -15,14 +15,14 @@ export const claude: AppModule = {
 		teamId: "Q6L2SF6YDW",
 		bundleIds: ["com.anthropic.claudefordesktop"],
 	}),
-	clean: async (ctx, installed) => [
-		...(await caches(ctx, [
+	clean: async (context, installed) => [
+		...(await caches(context, [
 			...electronCaches("Claude"),
 			"Library/Caches/com.anthropic.claudefordesktop",
 			"Library/Caches/com.anthropic.claudefordesktop.ShipIt",
 		])),
 		...(await otherBundles(
-			ctx,
+			context,
 			installed,
 			/^Claude(?:[ -].+)?\.app$/,
 			bundleIds,

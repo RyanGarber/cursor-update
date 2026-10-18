@@ -21,11 +21,11 @@ const older = (a: number[], b: number[]) =>
 
 /** Settings, plugins and indexes of major versions before the active one. */
 async function oldSettings(
-	ctx: AppContext,
+	context: AppContext,
 	installed: Installation | null,
 ): Promise<CleanupTarget[]> {
 	const folders = (
-		await children(join(ctx.home, "Library/Application Support/JetBrains"))
+		await children(join(context.home, "Library/Application Support/JetBrains"))
 	).filter((p) => release(basename(p)));
 	// Without an installed version, the newest folder is presumed active.
 	const active =
@@ -58,12 +58,12 @@ export const idea: AppModule = {
 	name: "idea",
 	displayName: "IntelliJ IDEA",
 	platforms: ["darwin"],
-	inspect: (ctx) =>
-		bundle(ctx, ["IntelliJ IDEA.app", "IntelliJ IDEA CE.app"], bundleIds),
-	update: async (ctx, installed) => {
+	inspect: (context) =>
+		bundle(context, ["IntelliJ IDEA.app", "IntelliJ IDEA CE.app"], bundleIds),
+	update: async (context, installed) => {
 		const code =
 			installed?.bundleId === "com.jetbrains.intellij.ce" ? "IIC" : "IIU";
-		const data = await ctx.json<
+		const data = await context.json<
 			Record<
 				string,
 				{
@@ -75,13 +75,16 @@ export const idea: AppModule = {
 			`https://data.services.jetbrains.com/products/releases?code=${code}&latest=true&type=release`,
 		);
 		const release = data[code]?.[0];
-		const download = release?.downloads[ctx.arch === "arm64" ? "macM1" : "mac"];
+		const download =
+			release?.downloads[context.architecture === "arm64" ? "macM1" : "mac"];
 		if (!release || !download)
 			throw new Error("No compatible IntelliJ release found");
 		return {
 			version: release.version,
 			url: download.link,
-			sha256: (await ctx.text(download.checksumLink)).trim().split(/\s+/)[0],
+			sha256: (await context.text(download.checksumLink))
+				.trim()
+				.split(/\s+/)[0],
 			format: "dmg",
 			entry: code === "IIC" ? "IntelliJ IDEA CE.app" : "IntelliJ IDEA.app",
 			teamId: "2ZEFAR8TH3",
@@ -90,18 +93,18 @@ export const idea: AppModule = {
 			],
 		};
 	},
-	clean: async (ctx, installed) => {
+	clean: async (context, installed) => {
 		const folders = (
-			await children(join(ctx.home, "Library/Caches/JetBrains"))
+			await children(join(context.home, "Library/Caches/JetBrains"))
 		).filter((p) => /^(IntelliJIdea|IdeaIC)\d/.test(basename(p)));
 		return [
 			...(await caches(
-				ctx,
-				folders.map((p) => p.slice(ctx.home.length + 1)),
+				context,
+				folders.map((p) => p.slice(context.home.length + 1)),
 			)),
-			...(await oldSettings(ctx, installed)),
+			...(await oldSettings(context, installed)),
 			...(await otherBundles(
-				ctx,
+				context,
 				installed,
 				/^IntelliJ IDEA(?:[ -].+)?\.app$/,
 				bundleIds,

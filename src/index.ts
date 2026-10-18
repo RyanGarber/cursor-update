@@ -1,9 +1,10 @@
-import { resolve } from "node:path";
-import { createInterface, type Interface } from "node:readline/promises";
+import { generateManPage } from "@optique/man";
+import { type RunOptions, runSync } from "@optique/run";
 import { apps, available, registry } from "./apps/index.ts";
+import { type AppOptions, program } from "./cli.ts";
 import { runAll, runApp, updateAndClean } from "./core/runner.ts";
-import { context, currentPlatform, platformNames } from "./core/system.ts";
-import type { AppModule, UI } from "./core/types.ts";
+import { appContext, currentPlatform, platformNames } from "./core/system.ts";
+import { interactive, terminalUI } from "./ui.ts";
 import {
 	binary,
 	check,
@@ -13,105 +14,12 @@ import {
 	version,
 } from "./update.ts";
 
-export interface CliOptions {
-	name?: string;
-	action: "inspect" | "update" | "clean";
-	appPath?: string;
-	help: boolean;
-	version: boolean;
-	yes: boolean;
-	/** `update --clean`: clean after updating. */
-	clean: boolean;
-}
-export function parseArgs(args: string[]): CliOptions {
-	const options: CliOptions = {
-		action: "inspect",
-		help: false,
-		version: false,
-		yes: false,
-		clean: false,
-	};
-	const positional: string[] = [];
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-		if (arg === "--help" || arg === "-h") options.help = true;
-		else if (arg === "--version" || arg === "-v") options.version = true;
-		else if (arg === "--yes" || arg === "-y") options.yes = true;
-		else if (arg === "--clean") options.clean = true;
-		else if (arg === "--app-path") {
-			const path = args[++i];
-			if (!path || path.startsWith("-"))
-				throw new Error("--app-path requires a path");
-			options.appPath = resolve(path);
-		} else if (arg?.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
-		else if (arg) positional.push(arg);
-	}
-	if (positional.length > 2)
-		throw new Error("Usage: sod-off <app> [update|clean]");
-	options.name = positional[0];
-	if (options.name === "all" && options.appPath)
-		throw new Error("--app-path cannot be used with all");
-	const action = positional[1];
-	if (action && action !== "update" && action !== "clean")
-		throw new Error(`Unknown subcommand: ${action}`);
-	options.action =
-		action === "update" || action === "clean" ? action : "inspect";
-	if (options.clean && options.action !== "update")
-		throw new Error("--clean can only be used with update");
-	return options;
-}
-export function help(
-	modules: readonly AppModule[] = available(apps),
-	platform = currentPlatform(),
-): string {
-	const list = modules.length
-		? modules
-				.map(
-					(app) =>
-						`  ${app.name.padEnd(14)} ${app.displayName} (${[app.update && "update", app.clean && "clean"].filter(Boolean).join(", ")})`,
-				)
-				.join("\n")
-		: `  No apps are available on ${platformNames[platform]} yet.`;
-	return `sod-off — inspect, update and clean installed apps\n\nUsage: sod-off <app|all> [update [--clean]|clean] [--app-path <path>] [--yes]\n\n${list}\n\nall: run on every installed app; skip missing apps.\n\nWithout a subcommand: show primary location, version and disk usage.\nupdate: inspect a downloaded release, then confirm replacement.\nupdate --clean: update, then clean (each confirmed separately).\nclean: preview every cache / inactive version and its full size, then confirm deletion.\n\n--app-path <path>  Select a primary app bundle or CLI launcher\n-y, --yes          Accept all confirmations, including non-interactive runs\n-h, --help         Show help\n-v, --version      Show sod-off version\n\nConfirmation defaults to No. Non-interactive runs only show previews unless --yes is supplied.\n`;
-}
-export async function confirmPrompt(
-	readline: Interface,
-	message: string,
-	signal?: AbortSignal,
-): Promise<boolean> {
-	try {
-		const closed = new Promise<string>((resolve) =>
-			readline.once("close", () => resolve("")),
-		);
-		const answer = await Promise.race([
-			readline.question(`${message} [y/N] `, { signal }),
-			closed,
-		]);
-		return /^(y|yes)$/i.test(answer.trim());
-	} catch {
-		return false;
-	} finally {
-		readline.close();
-	}
-}
-export function terminalUI(signal?: AbortSignal, yes = false): UI {
-	return {
-		log: (message) => console.log(message),
-		confirm: async (message) => {
-			signal?.throwIfAborted();
-			if (yes) return true;
-			if (!process.stdin.isTTY || !process.stdout.isTTY) {
-				console.log("No interactive terminal; nothing changed.");
-				return false;
-			}
-			const readline = createInterface({
-				input: process.stdin,
-				output: process.stdout,
-			});
-			return confirmPrompt(readline, message, signal);
-		},
-	};
-}
+export const options = {
+	help: "option",
+	version: { value: version, option: { names: ["-v", "--version"] } },
+	completion: "command",
+} as const satisfies RunOptions;
+
 /**
  * Offers a newer release before anything else runs. Only an interactive
  * terminal is asked (`--yes` does not answer it); a failed check stays silent.
@@ -120,47 +28,48 @@ export function terminalUI(signal?: AbortSignal, yes = false): UI {
 export async function selfUpdate(
 	target = binary(),
 	find: () => Promise<Manifest | null> = () => check(),
-	confirm: (message: string) => Promise<boolean> = (message) =>
-		terminalUI().confirm(message),
+	ui = terminalUI(),
 ): Promise<boolean> {
 	if (!target) return false;
 	await cleanup(target);
-	if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+	if (!interactive()) return false;
 	const manifest = await find().catch(() => null);
 	if (!manifest) return false;
 	if (
-		!(await confirm(
+		!(await ui.confirm(
 			`sod-off ${manifest.version} is available (installed: ${version}). Update now?`,
 		))
 	)
 		return false;
-	await install(manifest, target);
-	console.log(
-		`Updated sod-off to ${manifest.version}. Run your command again.`,
+	await ui.task(`Updating sod-off to ${manifest.version}`, () =>
+		install(manifest, target),
 	);
+	ui.success(`Updated sod-off to ${manifest.version}. Run your command again.`);
 	return true;
 }
+
 export async function run(args = process.argv.slice(2)): Promise<void> {
-	const options = parseArgs(args);
-	if (options.version) {
-		console.log(version);
+	// Without arguments there is nothing to run, so show what can be.
+	const parsed = runSync(program, {
+		...options,
+		args: args.length ? args : ["--help"],
+	});
+	if ("man" in parsed) {
+		console.log(generateManPage(program, { section: 1, date: new Date() }));
 		return;
 	}
 	if (await selfUpdate()) return;
-	if (options.help || !options.name) {
-		console.log(help());
-		return;
-	}
+	await execute(parsed);
+}
+
+async function execute(options: AppOptions & { yes: boolean }): Promise<void> {
 	const platform = currentPlatform();
 	const supported = available(apps, platform);
-	const app = registry(supported).get(options.name);
-	if (!app && options.name !== "all") {
-		if (registry(apps).has(options.name))
-			throw new Error(
-				`${options.name} is not available on ${platformNames[platform]}.`,
-			);
-		throw new Error(`Unknown app: ${options.name}. Run sod-off --help.`);
-	}
+	const app = registry(supported).get(options.app);
+	if (!app && options.app !== "all")
+		throw new Error(
+			`${options.app} is not available on ${platformNames[platform]}.`,
+		);
 	if (!supported.length) {
 		console.log(`No apps are available on ${platformNames[platform]} yet.`);
 		return;
@@ -170,15 +79,15 @@ export async function run(args = process.argv.slice(2)): Promise<void> {
 	process.on("SIGINT", cancel);
 	process.on("SIGTERM", cancel);
 	try {
-		const ctx = context(options.appPath, abort.signal);
+		const context = appContext(options.appPath, abort.signal);
 		const ui = terminalUI(abort.signal, options.yes);
-		const runner: typeof runApp = (app, action, ctx, ui) =>
+		const runner: typeof runApp = (app, action, context, ui) =>
 			options.clean
-				? updateAndClean(app, ctx, ui)
-				: runApp(app, action, ctx, ui);
-		if (options.name === "all")
-			await runAll(supported, options.action, ctx, ui, runner);
-		else if (app) await runner(app, options.action, ctx, ui);
+				? updateAndClean(app, context, ui)
+				: runApp(app, action, context, ui);
+		if (options.app === "all")
+			await runAll(supported, options.action, context, ui, runner);
+		else if (app) await runner(app, options.action, context, ui);
 	} finally {
 		process.off("SIGINT", cancel);
 		process.off("SIGTERM", cancel);

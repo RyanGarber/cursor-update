@@ -14,7 +14,7 @@ import {
 	response,
 	usage,
 } from "./system.ts";
-import type { OperationContext, Release, UI, Usage } from "./types.ts";
+import type { OperationContext, Release, Usage } from "./types.ts";
 
 export interface Prepared {
 	source: string;
@@ -36,30 +36,26 @@ async function hash(path: string): Promise<string> {
 	return h.digest("hex");
 }
 export async function prepare(
-	ctx: OperationContext,
+	context: OperationContext,
 	release: Release,
-	ui: UI,
 	downloadResponse: typeof response = response,
 ): Promise<Prepared> {
 	const temp = await realpath(await mkdtemp(join(tmpdir(), "sod-off-")));
-	ctx.track?.(temp);
+	context.track?.(temp);
 	const archive = join(temp, `download.${release.format}`);
 	let mounted = false;
 	const mount = join(temp, "volume");
 	const dispose = async () => {
 		// Keep the work directory if detach fails; never recursively delete a mounted volume.
 		if (mounted) {
-			await ctx.command(["/usr/bin/hdiutil", "detach", mount]);
+			await context.command(["/usr/bin/hdiutil", "detach", mount]);
 			mounted = false;
 		}
 		await rm(temp, { recursive: true, force: true });
 	};
 	try {
-		ui.log(
-			`Downloading and inspecting ${release.url}\nTemporary files are removed when the command finishes.`,
-		);
-		ctx.signal?.throwIfAborted();
-		const res = await downloadResponse(release.url, ctx.signal);
+		context.signal?.throwIfAborted();
+		const res = await downloadResponse(release.url, context.signal);
 		if (!res.body) throw new Error("Empty download response");
 		await pipeline(
 			Readable.fromWeb(res.body as WebReadableStream<Uint8Array>),
@@ -77,7 +73,7 @@ export async function prepare(
 		await mkdir(root);
 		if (release.format === "dmg") {
 			await mkdir(mount);
-			await ctx.command([
+			await context.command([
 				"/usr/bin/hdiutil",
 				"attach",
 				archive,
@@ -90,13 +86,13 @@ export async function prepare(
 			mounted = true;
 			root = mount;
 		} else if (release.format === "zip" || release.format === "tar.gz") {
-			const entries = await ctx.command(
+			const entries = await context.command(
 				release.format === "zip"
 					? ["/usr/bin/unzip", "-Z1", archive]
 					: ["/usr/bin/tar", "-tzf", archive],
 			);
 			validateEntries(entries);
-			await ctx.command(
+			await context.command(
 				release.format === "zip"
 					? ["/usr/bin/ditto", "-x", "-k", archive, root]
 					: ["/usr/bin/tar", "-xzf", archive, "-C", root],
@@ -125,7 +121,7 @@ export async function prepare(
 			throw new Error(`Release is missing ${release.verify}`);
 		const isBundle = release.entry.endsWith(".app");
 		// Authenticate vendor identity before running a downloaded CLI or reading a bundle for installation.
-		await ctx.command([
+		await context.command([
 			"/usr/bin/codesign",
 			"--verify",
 			"--deep",
@@ -136,25 +132,28 @@ export async function prepare(
 		]);
 		let version: string;
 		if (isBundle) {
-			const id = await plist(ctx, source, "CFBundleIdentifier");
+			const id = await plist(context, source, "CFBundleIdentifier");
 			if (!release.bundleIds?.includes(id))
 				throw new Error(`Unexpected bundle identifier: ${id}`);
-			version = await plist(ctx, source, "CFBundleShortVersionString");
-			const minimum = await plist(ctx, source, "LSMinimumSystemVersion");
-			const system = await ctx.command(["/usr/bin/sw_vers", "-productVersion"]);
+			version = await plist(context, source, "CFBundleShortVersionString");
+			const minimum = await plist(context, source, "LSMinimumSystemVersion");
+			const system = await context.command([
+				"/usr/bin/sw_vers",
+				"-productVersion",
+			]);
 			if (compareVersions(system, minimum) < 0)
 				throw new Error(
 					`This release requires macOS ${minimum}; installed: ${system}`,
 				);
 		} else {
-			const output = await ctx.command([source, "--version"]);
+			const output = await context.command([source, "--version"]);
 			version = output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0] ?? "";
 		}
 		if (!version || (release.version && version !== release.version))
 			throw new Error(
 				`Release version mismatch: expected ${release.version}, got ${version}`,
 			);
-		ctx.signal?.throwIfAborted();
+		context.signal?.throwIfAborted();
 		const executable = release.wholeArchive ? release.entry : undefined;
 		if (release.wholeArchive) source = root;
 		return {
