@@ -1,13 +1,63 @@
+import { lstat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { children } from "../core/system.ts";
-import type { AppModule } from "../core/types.ts";
+import type {
+	AppContext,
+	AppModule,
+	CleanupTarget,
+	Installation,
+} from "../core/types.ts";
 import { bundle, caches, otherBundles } from "./shared.ts";
 
 const bundleIds = ["com.jetbrains.intellij", "com.jetbrains.intellij.ce"];
 
+const release = (name: string) =>
+	name
+		.match(/^(?:IntelliJIdea|IdeaIC)(\d{4})\.(\d+)$/)
+		?.slice(1)
+		.map(Number);
+const older = (a: number[], b: number[]) =>
+	a[0] !== b[0] ? (a[0] ?? 0) < (b[0] ?? 0) : (a[1] ?? 0) < (b[1] ?? 0);
+
+/** Settings, plugins and indexes of major versions before the active one. */
+async function oldSettings(
+	ctx: AppContext,
+	installed: Installation | null,
+): Promise<CleanupTarget[]> {
+	const folders = (
+		await children(join(ctx.home, "Library/Application Support/JetBrains"))
+	).filter((p) => release(basename(p)));
+	// Without an installed version, the newest folder is presumed active.
+	const active =
+		installed?.version
+			?.match(/^(\d{4})\.(\d+)/)
+			?.slice(1)
+			.map(Number) ??
+		folders
+			.map((p) => release(basename(p)) ?? [])
+			.reduce<number[] | undefined>(
+				(newest, v) => (!newest || older(newest, v) ? v : newest),
+				undefined,
+			);
+	if (!active) return [];
+	const result: CleanupTarget[] = [];
+	for (const path of folders) {
+		const version = release(basename(path));
+		if (!version || !older(version, active)) continue;
+		if ((await lstat(path)).isSymbolicLink()) continue;
+		result.push({
+			path,
+			label: `${basename(path)} settings`,
+			kind: "version",
+		});
+	}
+	return result;
+}
+
 export const idea: AppModule = {
 	name: "idea",
 	displayName: "IntelliJ IDEA",
+	platforms: ["darwin"],
 	inspect: (ctx) =>
 		bundle(ctx, ["IntelliJ IDEA.app", "IntelliJ IDEA CE.app"], bundleIds),
 	update: async (ctx, installed) => {
@@ -49,6 +99,7 @@ export const idea: AppModule = {
 				ctx,
 				folders.map((p) => p.slice(ctx.home.length + 1)),
 			)),
+			...(await oldSettings(ctx, installed)),
 			...(await otherBundles(
 				ctx,
 				installed,

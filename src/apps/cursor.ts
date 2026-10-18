@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { readJSON } from "../core/system.ts";
 import type { AppModule } from "../core/types.ts";
+import { agentVersions } from "./cursor-agent.ts";
 import {
 	bundle,
 	caches,
@@ -10,10 +11,10 @@ import {
 } from "./shared.ts";
 
 const bundleIds = ["com.todesktop.230313mzl4w4u92"];
-
 export const cursor: AppModule = {
 	name: "cursor",
 	displayName: "Cursor",
+	platforms: ["darwin"],
 	inspect: (ctx) => bundle(ctx, ["Cursor.app"], bundleIds),
 	update: async (ctx) => ({
 		url: `https://api2.cursor.sh/updates/download/golden/darwin-${ctx.arch}/cursor/latest`,
@@ -42,6 +43,15 @@ export const cursor: AppModule = {
 				root,
 				data.commit ? join(root, data.commit) : undefined,
 				/^[a-f0-9]{40}$/i,
+			)),
+			// Agent bundled with Cursor.app; the standalone CLI is `cursor-agent`.
+			...(await agentVersions(
+				join(
+					ctx.home,
+					"Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local",
+				),
+				[],
+				true,
 			)),
 			...(await otherBundles(
 				ctx,

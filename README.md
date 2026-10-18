@@ -1,11 +1,14 @@
 # sod-off
 
-Inspect, update, and clean macOS applications from one interactive Bun CLI.
+Inspect, update, and clean applications from one interactive Bun CLI.
+
+sod-off runs on macOS, Linux and Windows; each app declares the operating systems it supports, and only those are offered. Every app currently supports macOS only, so on Linux and Windows sod-off reports that no apps are available.
+
+Download the build for your system (`sod-off-darwin-arm64`, `sod-off-darwin-x64`, `sod-off-linux-arm64`, `sod-off-linux-x64` or `sod-off-win32-x64.exe`) from the [latest release](https://github.com/ryangarber/sod-off/releases/latest), save it as `~/.local/bin/sod-off` and `chmod +x` it. Or build it from source:
 
 ```sh
 bun install --ignore-scripts
-bun run start --help
-bun link
+bun run install   # compiles to ~/.local/bin/sod-off
 
 sod-off cursor
 sod-off idea update
@@ -14,6 +17,7 @@ sod-off claude-code update
 sod-off chatgpt update
 sod-off codex clean
 sod-off all update -y
+sod-off cursor-agent update --clean
 sod-off all clean
 ```
 
@@ -22,6 +26,7 @@ Apple Silicon and Intel releases are selected where the vendor offers them.
 | App subcommand | Application | Release source |
 | --- | --- | --- |
 | `cursor` | Cursor | Cursor golden-channel download endpoint |
+| `cursor-agent` | Cursor Agent CLI (`agent`) | Version pinned by Cursor's official installer script |
 | `idea` | IntelliJ IDEA | JetBrains releases API; retains the installed edition |
 | `claude` | Claude.app | Anthropic's official universal desktop DMG |
 | `claude-code` | Claude Code | Anthropic native release channel and SHA-256 manifest |
@@ -42,22 +47,26 @@ Preparation can download a large installer before confirmation; it does not chan
 
 `sod-off <app> clean` lists every discovered cache directory and inactive version, its full recursive file size, disk allocation, and the exact path to delete. It then asks for confirmation. Updates and cleanup are separate operations.
 
+`sod-off <app> update --clean` updates, then runs `clean`, so the version it replaced can be removed right away. Each step is previewed and confirmed separately; a failed update skips the clean.
+
 `sod-off all [update|clean]` runs the action sequentially on every app with an existing installation (inspection by default). Missing apps are skipped. Failures are reported while remaining apps continue, with a nonzero exit status if any failed. `--app-path` cannot be combined with `all`.
 
 Confirmations default to **No**. Declining, EOF, or a non-interactive terminal leaves installations and caches alone. Pass `--yes` or `-y` to accept every confirmation, including in non-interactive runs. Previews and safety checks still run.
+
+On start, a compiled `sod-off` checks the latest release's `latest.json`. If a newer version is out, it asks to update; on yes, it downloads the build for your architecture, verifies its SHA-256 and replaces itself, then exits so you can run the command again. Only interactive terminals are asked, `--yes` does not answer it, and a failed check is silent. Runs from source never update themselves.
 
 ```sh
 sod-off cursor update --app-path "$HOME/Applications/Cursor.app"
 sod-off codex --app-path "$HOME/.local/bin/codex"
 ```
 
-Desktop discovery prefers `/Applications`, then `~/Applications`. CLI discovery uses the first executable on `PATH`, falling back to `~/.local/bin`. `--app-path` selects a specific primary bundle or launcher. Cleanup also discovers matching, identity-checked alternate bundles in those application directories, known vendor caches, native CLI version directories, and versions installed by sod-off. It does not scan arbitrary disks, delete sessions/configuration, or purge shared npm/Homebrew caches.
+Desktop discovery prefers `/Applications`, then `~/Applications`. CLI discovery uses the first executable on `PATH`, falling back to `~/.local/bin`. `--app-path` selects a specific primary bundle or launcher. Cleanup also discovers matching, identity-checked alternate bundles in those application directories, known vendor caches, native CLI version directories (including the `agent` versions bundled with Cursor, keeping the newest, and the standalone `agent` CLI's, keeping the active one, any its `agent`/`cursor-agent` launchers point to, any a live process runs from, and removing interrupted installs), IntelliJ settings folders in `~/Library/Application Support/JetBrains` from major versions older than the installed one, and versions installed by sod-off. It does not scan arbitrary disks, delete sessions/configuration, or purge shared npm/Homebrew caches.
 
 Updates support standalone desktop bundles and native CLIs. Executables located under npm, Homebrew, or JetBrains Toolbox package directories must be updated with that package manager. Select a standalone installation to manage it with sod-off. Note that in the case of the legacy Codex app, it will be replaced with the modern ChatGPT app. No new apps will be installed; only previously installed apps will be updated.
 
 ## Architecture
 
-Each file in `src/apps/` exports an interface-typed `AppModule` object. `name` registers its primary subcommand. `inspect` discovers the installation; optional `update` and `clean` methods return a release descriptor or cleanup targets. Register a new object in `src/apps/index.ts`; omitted methods are reported as unsupported.
+Each file in `src/apps/` exports an interface-typed `AppModule` object. `name` registers its primary subcommand; `platforms` lists the operating systems (`darwin`, `linux`, `win32`) it supports, and it is hidden everywhere else. `inspect` discovers the installation; optional `update` and `clean` methods return a release descriptor or cleanup targets. Register a new object in `src/apps/index.ts`; omitted methods are reported as unsupported.
 
 ```ts
 import type { AppModule } from './src/core/types.ts';
@@ -65,6 +74,7 @@ import type { AppModule } from './src/core/types.ts';
 const example: AppModule = {
   name: 'example',
   displayName: 'Example',
+  platforms: ['darwin'],
   async inspect(ctx) { /* discover location and version */ return null; },
   async update(ctx, installed) {
     return {
@@ -93,10 +103,12 @@ Return existing cleanup paths, and exclude active vendor versions. App modules d
 ## Development
 
 ```sh
-bun test
+bun run test
 bun run typecheck
 bun run check
 ```
+
+The source uses only Node APIs, so it runs on Node (`bun run start` runs `node ./src/main.ts`; Node 22.18+ runs TypeScript directly) as well as compiled by Bun. Tests use Vitest; those needing macOS tools skip themselves elsewhere. CI (`.github/workflows/check.yml`) runs these and builds every OS's binary on every push, on Ubuntu, and smoke-tests a build on Linux and Windows. After it passes on `main`, `release.yml` runs the release as a dry run: rylease's `conventional` preset reports the next version and notes, and the binaries and `latest.json` are built and kept as workflow artifacts. Dispatching `release` from `main` releases for real: rylease bumps `package.json`, prepends `CHANGELOG.md`, commits, tags `v<version>` and creates the GitHub release; `release-cli.yml` then uploads the binaries, followed by `latest.json`.
 
 Tests use temporary fixtures and mocked vendor metadata; they cover routing, cancellation, accounting, active-version protection, revalidation, signature/digest failures, mount cleanup, native launcher switching, and rollback. They do not update the developer's installed applications.
 

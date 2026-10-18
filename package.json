@@ -4,20 +4,22 @@
 	"description": "Update Cursor, IDEA, Claude Code, Codex, and more - without leaving sod behind.",
 	"type": "module",
 	"bin": {
-		"sod-off": "./src/index.ts"
+		"sod-off": "./src/main.ts"
 	},
 	"scripts": {
-		"start": "bun run ./src/index.ts",
+		"start": "node ./src/main.ts",
 		"check": "biome check .",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test",
-		"install": "bun build ./src/index.ts --outfile ~/.local/bin/sod-off --target bun && chmod +x ~/.local/bin/sod-off"
+		"test": "vitest run",
+		"build": "node ./scripts/build.ts",
+		"install": "bun build ./src/main.ts --compile --outfile ~/.local/bin/sod-off"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.14",
-		"@types/bun": "^1.4.2",
-		"typescript": "^7.0.2"
+		"@types/node": "^26.6.5",
+		"typescript": "^7.0.2",
+		"vitest": "^5.0.5"
 	}
 }

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
 import { prepare } from "../src/core/artifact.ts";
 import { exists } from "../src/core/system.ts";
 import type { AppContext, Release } from "../src/core/types.ts";
@@ -14,6 +14,7 @@ const release: Release = {
 };
 function context(commands: string[][]): AppContext {
 	return {
+		platform: "darwin",
 		home: "/tmp/unused",
 		arch: "arm64",
 		text: async () => "",

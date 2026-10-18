@@ -6,6 +6,7 @@ import { caches, cli, versions } from "./shared.ts";
 export const codex: AppModule = {
 	name: "codex",
 	displayName: "Codex CLI",
+	platforms: ["darwin"],
 	inspect: async (ctx) => {
 		const installed = await cli(ctx, "codex");
 		if (installed) {

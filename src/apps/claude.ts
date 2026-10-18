@@ -6,6 +6,7 @@ const bundleIds = ["com.anthropic.claudefordesktop"];
 export const claude: AppModule = {
 	name: "claude",
 	displayName: "Claude.app",
+	platforms: ["darwin"],
 	inspect: (ctx) => bundle(ctx, ["Claude.app"], bundleIds),
 	update: async () => ({
 		url: "https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",

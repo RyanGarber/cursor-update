@@ -1,6 +1,6 @@
 import { lstat, realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { children, exists, plist } from "../core/system.ts";
+import { children, exists, plist, which } from "../core/system.ts";
 import type { AppContext, CleanupTarget, Installation } from "../core/types.ts";
 
 export async function bundle(
@@ -30,15 +30,34 @@ export async function bundle(
 		}
 	return null;
 }
+/**
+ * The first launcher found on PATH or in ~/.local/bin, trying each name in
+ * turn; with `accept`, only one whose payload it accepts.
+ */
 export async function cli(
 	ctx: AppContext,
-	executable: string,
+	executables: string | string[],
+	accept: (payload: string) => boolean = () => true,
 ): Promise<Installation | null> {
-	const path =
-		ctx.appPath ??
-		Bun.which(executable) ??
-		join(ctx.home, ".local/bin", executable);
-	if (!(await exists(path))) return null;
+	const names = typeof executables === "string" ? [executables] : executables;
+	let path = ctx.appPath;
+	for (const name of names) {
+		if (path) break;
+		for (const candidate of [
+			await which(name),
+			join(ctx.home, ".local/bin", name),
+		])
+			if (
+				candidate &&
+				(await exists(candidate)) &&
+				accept(await realpath(candidate).catch(() => ""))
+			) {
+				path = candidate;
+				break;
+			}
+	}
+	if (!path || !(await exists(path))) return null;
+	const executable = basename(path);
 	const payload = await realpath(path);
 	const output = await ctx.command([path, "--version"]);
 	const version = output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0];
