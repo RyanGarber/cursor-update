@@ -1,0 +1,92 @@
+name: release-cli
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to release, without its tag's v"
+        required: true
+        type: string
+      notes:
+        description: "Release notes/changelog to include in the release body"
+        required: false
+        type: string
+      ref:
+        description: "What to build, if not the version's tag"
+        required: false
+        type: string
+      dry_run:
+        description: "Build but publish nothing"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    # Cross-compiles every OS's build; on macOS, so the macOS builds can be
+    # signed (ad hoc), which Apple Silicon requires to run them.
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      # Always, off main.
+      DRY_RUN: ${{ inputs.dry_run || github.ref_name != 'main' }}
+      TAG: v${{ inputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || format('v{0}', inputs.version) }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # A dry run builds a commit whose version rylease never wrote; the
+      # binary reports and compares against the version it was built with.
+      - name: Write version
+        if: env.DRY_RUN == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Build
+        run: |
+          bun run build
+          codesign --force --sign - dist/sod-off-darwin-*
+          file dist/sod-off-*
+          if [ "$(uname -m)" = "arm64" ]; then dist/sod-off-darwin-arm64 --version; fi
+
+      - name: Publish binaries
+        uses: ./.github/actions/publish
+        with:
+          version: ${{ env.TAG }}
+          notes: ${{ inputs.notes }}
+          files: dist/sod-off-*
+          artifact: cli-binaries
+          dry-run: ${{ env.DRY_RUN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # What every installed sod-off checks on start (src/update.ts). Only
+      # once every binary is up, so no CLI is told of a release it cannot yet
+      # download; each asset is pinned to this release's tag and digest.
+      - name: Write manifest
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
+        run: bun scripts/manifest.ts "$VERSION" "$BASE" | tee "$RUNNER_TEMP/latest.json"
+
+      - name: Publish manifest
+        uses: ./.github/actions/publish
+        with:
+          version: ${{ env.TAG }}
+          notes: ${{ inputs.notes }}
+          files: ${{ runner.temp }}/latest.json
+          artifact: cli-latest.json
+          dry-run: ${{ env.DRY_RUN }}
+          token: ${{ secrets.GITHUB_TOKEN }}

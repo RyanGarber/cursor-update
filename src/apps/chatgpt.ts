@@ -25,6 +25,7 @@ export function appcast(
 export const chatgpt: AppModule = {
 	name: "chatgpt",
 	displayName: "ChatGPT.app",
+	platforms: ["darwin"],
 	inspect: (ctx) => bundle(ctx, ["ChatGPT.app"], bundleIds),
 	update: async (ctx) => ({
 		...appcast(

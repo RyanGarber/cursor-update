@@ -6,6 +6,7 @@ import { idea } from "../src/apps/idea.ts";
 import type { AppContext, Installation } from "../src/core/types.ts";
 
 const ctx: AppContext = {
+	platform: "darwin",
 	home: "/tmp/fake",
 	arch: "arm64",
 	command: async () => "",
@@ -145,4 +146,90 @@ it("uses the official Claude desktop download redirect", async () => {
 	expect((await claude.update?.(ctx, null))?.url).toBe(
 		"https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",
 	);
+});
+
+describe("version cleanup", async () => {
+	const { mkdtemp, mkdir, rm, realpath, symlink } = await import(
+		"node:fs/promises"
+	);
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	async function fixture(dirs: string[]): Promise<string> {
+		const home = await realpath(await mkdtemp(join(tmpdir(), "sod-clean-")));
+		for (const dir of dirs) await mkdir(join(home, dir), { recursive: true });
+		return home;
+	}
+
+	it("removes IntelliJ settings of major versions before the installed one", async () => {
+		const root = "Library/Application Support/JetBrains";
+		const home = await fixture(
+			[
+				"IntelliJIdea2025.3",
+				"IntelliJIdea2026.2",
+				"IntelliJIdea2026.3",
+				"IntelliJIdea2027.1",
+				"IdeaIC2024.1",
+				"WebStorm2024.1",
+				"consentOptions",
+			].map((name) => join(root, name)),
+		);
+		try {
+			const items = await idea.clean?.(
+				{ ...ctx, home },
+				{
+					path: "/Applications/IntelliJ IDEA.app",
+					payload: "/Applications/IntelliJ IDEA.app",
+					kind: "bundle",
+					version: "2026.3.1",
+					bundleId: "com.jetbrains.intellij",
+				},
+			);
+			expect(items?.map((item) => item.path)).toEqual(
+				["IdeaIC2024.1", "IntelliJIdea2025.3", "IntelliJIdea2026.2"].map(
+					(name) => join(home, root, name),
+				),
+			);
+			// Without an installation the newest folder is kept.
+			const fallback = await idea.clean?.({ ...ctx, home }, null);
+			expect(fallback?.map((item) => item.path)).toHaveLength(4);
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
+	});
+
+	it("removes old Cursor agent versions but keeps the newest and linked ones", async () => {
+		const { cursor } = await import("../src/apps/cursor.ts");
+		const worker =
+			"Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/share/cursor-agent/versions";
+		const cli = ".local/share/cursor-agent/versions";
+		const home = await fixture([
+			join(worker, "2026.10.14-a26f8ae"),
+			join(worker, "2026.10.18-ac23f9a"),
+			join(worker, "2026.9.30-0123abc"),
+			join(cli, "2026.10.1-1111111"),
+			join(cli, "2026.10.9-2222222"),
+			join(cli, "2026.10.12-3333333"),
+			join(cli, "not-a-version"),
+			".local/bin",
+		]);
+		await symlink(
+			join(home, cli, "2026.10.1-1111111/cursor-agent"),
+			join(home, ".local/bin/agent"),
+		);
+		await Bun.write(join(home, cli, "2026.10.1-1111111/cursor-agent"), "");
+		try {
+			const items = await cursor.clean?.({ ...ctx, home }, null);
+			expect(
+				items
+					?.filter((item) => item.path.includes("cursor-agent/versions"))
+					.map((item) => item.path),
+			).toEqual([
+				join(home, worker, "2026.10.14-a26f8ae"),
+				join(home, worker, "2026.9.30-0123abc"),
+				join(home, cli, "2026.10.9-2222222"),
+			]);
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
+	});
 });

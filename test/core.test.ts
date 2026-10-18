@@ -39,6 +39,7 @@ beforeEach(async () => {
 	await mkdir(cache);
 	await writeFile(join(cache, "data"), "1234567890");
 	ctx = {
+		platform: "darwin",
 		home,
 		arch: "arm64",
 		command: async (args) => (args[0] === "/bin/ps" ? "" : command(args)),
@@ -52,6 +53,7 @@ beforeEach(async () => {
 	app = {
 		name: `test-${crypto.randomUUID()}`,
 		displayName: "Example",
+		platforms: ["darwin"],
 		inspect: async () => ({
 			path: primary,
 			payload: primary,

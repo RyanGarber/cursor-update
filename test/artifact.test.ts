@@ -14,6 +14,7 @@ const release: Release = {
 };
 function context(commands: string[][]): AppContext {
 	return {
+		platform: "darwin",
 		home: "/tmp/unused",
 		arch: "arm64",
 		text: async () => "",

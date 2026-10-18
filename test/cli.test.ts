@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { apps, registry } from "../src/apps/index.ts";
+import { apps, available, registry } from "../src/apps/index.ts";
 import { help, parseArgs } from "../src/index.ts";
 
 describe("CLI routing", () => {
@@ -34,7 +34,14 @@ describe("CLI routing", () => {
 		for (const app of apps) {
 			expect(app.update).toBeFunction();
 			expect(app.clean).toBeFunction();
-			expect(help()).toContain(app.name);
+			expect(help(apps, "darwin")).toContain(app.name);
+		}
+	});
+	it("shows only the apps an operating system supports", () => {
+		expect(available(apps, "darwin")).toEqual([...apps]);
+		for (const platform of ["linux", "win32"] as const) {
+			expect(available(apps, platform)).toEqual([]);
+			expect(help([], platform)).toContain("No apps are available");
 		}
 	});
 	it("rejects duplicate registrations", () => {
@@ -90,9 +97,24 @@ it("runs only installed apps for every action and continues after failures", asy
 		version: "1",
 	};
 	const modules = [
-		{ name: "missing", displayName: "Missing", inspect: async () => null },
-		{ name: "broken", displayName: "Broken", inspect: async () => installed },
-		{ name: "present", displayName: "Present", inspect: async () => installed },
+		{
+			name: "missing",
+			displayName: "Missing",
+			platforms: ["darwin" as const],
+			inspect: async () => null,
+		},
+		{
+			name: "broken",
+			displayName: "Broken",
+			platforms: ["darwin" as const],
+			inspect: async () => installed,
+		},
+		{
+			name: "present",
+			displayName: "Present",
+			platforms: ["darwin" as const],
+			inspect: async () => installed,
+		},
 	];
 	for (const action of ["inspect", "update", "clean"] as const) {
 		const called: string[] = [];

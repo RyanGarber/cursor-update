@@ -1,0 +1,63 @@
+name: check
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  check:
+    # sod-off and its tests need macOS (PlistBuddy, codesign, hdiutil).
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      # The `install` script installs sod-off itself, not its dependencies.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Lint
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Build
+        run: bun run build
+
+  # No app supports Linux or Windows yet; this checks sod-off still starts
+  # and says so there.
+  smoketest:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Run
+        shell: bash
+        run: |
+          bun build ./src/index.ts --compile --outfile sod-off
+          ./sod-off --version
+          ./sod-off --help | tee help.txt
+          grep -q "No apps are available" help.txt
+          ./sod-off all

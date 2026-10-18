@@ -4,6 +4,7 @@ import { caches, cli, versions } from "./shared.ts";
 export const claudeCode: AppModule = {
 	name: "claude-code",
 	displayName: "Claude Code",
+	platforms: ["darwin"],
 	inspect: (ctx) => cli(ctx, "claude"),
 	update: async (ctx) => {
 		const base = "https://downloads.claude.ai/claude-code-releases";

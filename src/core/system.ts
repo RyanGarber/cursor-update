@@ -1,7 +1,20 @@
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { AppContext, Usage } from "./types.ts";
+import type { AppContext, Platform, Usage } from "./types.ts";
+
+export const platforms: readonly Platform[] = ["darwin", "linux", "win32"];
+export const platformNames: Record<Platform, string> = {
+	darwin: "macOS",
+	linux: "Linux",
+	win32: "Windows",
+};
+export function currentPlatform(): Platform {
+	const platform = process.platform as Platform;
+	if (!platforms.includes(platform))
+		throw new Error(`Unsupported operating system: ${process.platform}`);
+	return platform;
+}
 
 export async function exists(path: string): Promise<boolean> {
 	try {
@@ -65,12 +78,12 @@ export async function response(
 	return result;
 }
 export function context(appPath?: string, signal?: AbortSignal): AppContext {
-	if (process.platform !== "darwin")
-		throw new Error("sod-off currently supports macOS only.");
+	const platform = currentPlatform();
 	if (process.arch !== "arm64" && process.arch !== "x64")
 		throw new Error(`Unsupported architecture: ${process.arch}`);
 	return {
 		signal,
+		platform,
 		home: homedir(),
 		arch: process.arch,
 		appPath,

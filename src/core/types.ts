@@ -9,6 +9,8 @@ export interface Installation {
 	storage?: string;
 	bundleId?: string;
 }
+/** Operating systems sod-off runs on; each app declares which it supports. */
+export type Platform = "darwin" | "linux" | "win32";
 export interface CleanupTarget {
 	path: string;
 	label: string;
@@ -28,6 +30,7 @@ export interface Release {
 }
 export interface AppContext {
 	signal?: AbortSignal;
+	platform: Platform;
 	home: string;
 	arch: "arm64" | "x64";
 	appPath?: string;
@@ -43,6 +46,8 @@ export interface AppModule {
 	/** Registers the first CLI subcommand. */
 	name: string;
 	displayName: string;
+	/** Operating systems this module supports; it is hidden on any other. */
+	platforms: readonly Platform[];
 	inspect(ctx: AppContext): Promise<Installation | null>;
 	update?(ctx: AppContext, installed: Installation | null): Promise<Release>;
 	clean?(
