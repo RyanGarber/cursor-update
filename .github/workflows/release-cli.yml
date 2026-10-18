@@ -60,23 +60,29 @@ jobs:
           MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
 
       - name: Publish binaries
-        uses: ./.github/actions/publish
+        uses: ryangarber/rylease@v2
         with:
-          version: ${{ env.TAG }}
+          version: ${{ inputs.version }}
           notes: ${{ inputs.notes }}
-          files: ${{ runner.temp }}/cli-artifacts/sod-off-*
-          artifact: cli-binaries
           dry-run: ${{ env.DRY_RUN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          steps: |
+            - uses: github-release-assets
+              with:
+                files: ['${{ runner.temp }}/cli-artifacts/sod-off-*']
+                dryRunArtifact: true
+                artifactName: cli-binaries
 
       # Only once every binary is up, so no CLI is told of a release it cannot
       # yet download.
       - name: Publish manifest
-        uses: ./.github/actions/publish
+        uses: ryangarber/rylease@v2
         with:
-          version: ${{ env.TAG }}
+          version: ${{ inputs.version }}
           notes: ${{ inputs.notes }}
-          files: ${{ runner.temp }}/cli-artifacts/latest.json
-          artifact: cli-latest.json
           dry-run: ${{ env.DRY_RUN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          steps: |
+            - uses: github-release-assets
+              with:
+                files: ['${{ runner.temp }}/cli-artifacts/latest.json']
+                dryRunArtifact: true
+                artifactName: cli-latest.json

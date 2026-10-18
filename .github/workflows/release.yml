@@ -1,22 +1,17 @@
 name: release
 
 on:
+  # A push runs the whole release as a dry run: everything is built, and
+  # nothing is published. Only a dispatch from main releases.
   workflow_run:
     workflows:
       - check
     types:
       - completed
-    # A push to main runs the whole release as a dry run: everything is built,
-    # and nothing is published. Only a dispatch from main releases.
     branches:
       - main
+      - dev
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build everything but publish nothing (always, off main)"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   # Under workflow_run, github.ref is always the default branch.
@@ -32,87 +27,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || github.ref_name != 'main' }}
     outputs:
-      released: ${{ steps.status.outputs.released }}
-      version: ${{ steps.status.outputs.version }}
+      # A dry run goes through every time, so each push tests the build; with
+      # nothing to release, it builds the current version.
+      released: ${{ env.DRY_RUN == 'true' || steps.rylease.outputs.released }}
+      version: ${{ steps.rylease.outputs.version || steps.rylease.outputs.previous-version }}
       notes: ${{ steps.rylease.outputs.notes }}
-      dry_run: ${{ steps.mode.outputs.dry_run }}
-      # What the release builds: its tag, or in a dry run (which tags
-      # nothing) the commit.
-      ref: ${{ steps.status.outputs.ref }}
+      dry_run: ${{ env.DRY_RUN }}
+      # What the release builds: its tag, or in a dry run (which tags nothing)
+      # the commit.
+      ref: ${{ env.DRY_RUN == 'true' && (github.event.workflow_run.head_sha || github.sha) || format('v{0}', steps.rylease.outputs.version) }}
 
     steps:
-      # Pushes only ever dry-run; a real release is dispatched, from main.
-      - name: Resolve mode
-        id: mode
-        env:
-          EVENT: ${{ github.event_name }}
-          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
-          DRY_RUN: ${{ inputs.dry_run || false }}
-        run: |
-          if [ "$EVENT" != "workflow_dispatch" ] || [ "$BRANCH" != "main" ]; then DRY_RUN=true; fi
-          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
-          echo "Release from $BRANCH (dry run: $DRY_RUN)"
-
       # A dispatch checks out the branch itself, so the release commit can be
       # pushed to it.
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
-          persist-credentials: true
 
       - name: Release
         id: rylease
-        uses: ryangarber/rylease@v1
+        uses: ryangarber/rylease@v2
         with:
-          dry-run: ${{ steps.mode.outputs.dry_run }}
-          steps: |
-            - conventional:
-                git-commit:
-                  message: "chore(release): v{version} [skip ci]"
-
-      - name: Write release status
-        id: status
-        env:
-          DRY_RUN: ${{ steps.mode.outputs.dry_run }}
-          RELEASED: ${{ steps.rylease.outputs.released }}
-          VERSION: ${{ steps.rylease.outputs.version || steps.rylease.outputs.previous-version }}
-        run: |
-          # A dry run goes through every time, so each push tests it; with
-          # nothing to release, it builds the current version.
-          if [ "$DRY_RUN" = "true" ] || [ "$RELEASED" = "true" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$DRY_RUN" = "true" ]; then
-            echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=v$VERSION" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Print release
-        if: steps.mode.outputs.dry_run == 'true'
-        env:
-          RELEASED: ${{ steps.rylease.outputs.released }}
-          VERSION: ${{ steps.status.outputs.version }}
-          KIND: ${{ steps.rylease.outputs.kind }}
-          NOTES: ${{ steps.rylease.outputs.notes }}
-        run: |
-          {
-            echo "### Dry run: v$VERSION"
-            echo
-            if [ "$RELEASED" = "true" ]; then
-              echo "Would release \`v$VERSION\` ($KIND) of \`$GITHUB_REPOSITORY\` with these notes:"
-              echo
-              printf '%s\n' "$NOTES"
-            else
-              echo "No release-worthy commits; builds the current version."
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          dry-run: ${{ env.DRY_RUN }}
 
   cli:
     needs: version
