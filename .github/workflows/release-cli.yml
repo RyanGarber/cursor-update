@@ -60,13 +60,16 @@ jobs:
           MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}
 
       - name: Publish binaries
-        uses: ryangarber/rylease@v2
+        uses: ryangarber/rylease@v3
         with:
           version: ${{ inputs.version }}
           notes: ${{ inputs.notes }}
           dry-run: ${{ env.DRY_RUN }}
+          # No preset here to give them.
+          scheme: semver
+          history: git/tags
           steps: |
-            - uses: github-release-assets
+            - uses: github/upload-release-assets
               with:
                 files: ['${{ runner.temp }}/cli-artifacts/sod-off-*']
                 dryRunArtifact: true
@@ -75,13 +78,16 @@ jobs:
       # Only once every binary is up, so no CLI is told of a release it cannot
       # yet download.
       - name: Publish manifest
-        uses: ryangarber/rylease@v2
+        uses: ryangarber/rylease@v3
         with:
           version: ${{ inputs.version }}
           notes: ${{ inputs.notes }}
           dry-run: ${{ env.DRY_RUN }}
+          # No preset here to give them.
+          scheme: semver
+          history: git/tags
           steps: |
-            - uses: github-release-assets
+            - uses: github/upload-release-assets
               with:
                 files: ['${{ runner.temp }}/cli-artifacts/latest.json']
                 dryRunArtifact: true
