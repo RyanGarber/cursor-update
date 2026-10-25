@@ -9,7 +9,7 @@ export const claude: AppModule = {
 	platforms: ["darwin"],
 	inspect: (context) => bundle(context, ["Claude.app"], bundleIds),
 	update: async () => ({
-		url: "https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",
+		url: "https://releases.claude.com/api/desktop/darwin/universal/dmg/latest/redirect",
 		format: "dmg",
 		entry: "Claude.app",
 		teamId: "Q6L2SF6YDW",

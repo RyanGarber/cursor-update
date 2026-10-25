@@ -7,7 +7,7 @@ import { otherBundles } from "./shared.ts";
 describe("claude", () => {
 	it("uses the official Claude desktop download redirect", async () => {
 		expect((await claude.update?.(testContext(), null))?.url).toBe(
-			"https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect",
+			"https://releases.claude.com/api/desktop/darwin/universal/dmg/latest/redirect",
 		);
 	});
 
