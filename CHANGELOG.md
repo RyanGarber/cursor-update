@@ -1,3 +1,13 @@
+## v1.1.1 (2026-10-27)
+
+### Bug Fixes
+
+- claude.app update endpoint returns 403 ([16d30e6](https://github.com/ryangarber/sod-off/commit/16d30e674997a3388182b4ac2e804f982da27a5c))
+
+### Other
+
+- upgrade to rylease@v3 ([ebce256](https://github.com/ryangarber/sod-off/commit/ebce25659185f2c52c25182945c95787693dc330))
+
 # v1.1.0 (2026-10-19)
 
 ## Features
